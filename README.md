@@ -45,6 +45,4 @@ The full IMR waveform `ESIGMAHM` is then produced by smoothly attaching the insp
 * Activate your `conda` environment and install `ESIGMAPy` by running: `pip install git+https://github.com/gwnrtools/esigmapy.git` 
 
 ***
-If everything goes fine, you should be able to generate `ESIGMAHM` waveforms. The instructions to do so and the various functionalities that `ESIGMAHM` offers are detailed in [this tutorial notebook](https://github.com/gwnrtools/gwnrtools/blob/master/notebooks/ESIGMA_generation.ipynb). 
-
-
+If everything goes fine, you should be able to generate `ESIGMAHM` waveforms. The instructions to do so and the various functionalities that `ESIGMAHM` offers are detailed in [this tutorial notebook](https://github.com/gwnrtools/esigmapy/blob/master/notebooks/ESIGMA_generation.ipynb). 
