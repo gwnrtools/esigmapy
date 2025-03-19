@@ -17,6 +17,7 @@ The full IMR waveform `ESIGMAHM` is then produced by smoothly attaching the insp
   git clone https://git.ligo.org/kaushik.paul/lalsuite.git
   cd lalsuite
   git checkout enigma_spins_v2023
+  git checkout d654ce417c79b194c31e1bc3b0184fafb63a5453
   ``` 
 * **Installing the code:**
   - Activate your `conda` environment. Make sure that the `swig` version in this environment is below `4.2.1` (you can check this by running `conda list swig`). If not, install its version `4.2.0` by running `conda install -c conda-forge swig=4.2.0`. 
