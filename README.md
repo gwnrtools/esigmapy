@@ -1,6 +1,6 @@
 # ESIGMAPy: a Python package to generate `ESIGMAHM` waveforms
 
-`ESIGMAHM` is an eccentric, non-precessing spins, inspiral-merger-ringdown (IMR) waveform model. It is composed of two pieces:
+`ESIGMAHM` is an eccentric, aligned-spin, inspiral-merger-ringdown (IMR) waveform model with higher-order modes. It is composed of two pieces:
 
 * **Inspiral piece (called `InspiralESIGMAHM`):** The inspiral piece comes from a combination of post-Newtonian theory, self-force, and black hole perturbation theory. It is currently implemented in a [private fork](https://git.ligo.org/kaushik.paul/lalsuite/-/tree/enigma_spins_v2023?ref_type=heads) of `LALSuite`.  
 * **Plunge-merger-ringdown piece**: Assuming moderate starting eccentricities that will decay by the late inspiral, we use the quasi-circular NR surrogate `NRSur7dq4` for the plunge-merger-ringdown piece for `ESIGMAHM`. This requires the `NRSur7dq4`'s [data file](https://git.ligo.org/lscsoft/lalsuite-extra/-/blob/master/data/lalsimulation/NRSur7dq4.h5) to be downloaded. 
