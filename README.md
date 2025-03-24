@@ -2,7 +2,7 @@
 
 `ESIGMAHM` is an eccentric, aligned-spin, inspiral-merger-ringdown (IMR) waveform model with higher-order modes. It is composed of two pieces:
 
-* **Inspiral piece (called `InspiralESIGMAHM`):** The inspiral piece comes from a combination of post-Newtonian theory, self-force, and black hole perturbation theory. It is currently implemented in a [private fork](https://git.ligo.org/kaushik.paul/lalsuite/-/tree/enigma_spins_v2023?ref_type=heads) of `LALSuite`.  
+* **Inspiral piece (called `InspiralESIGMAHM`):** The inspiral piece comes from a combination of post-Newtonian theory, self-force, and black hole perturbation theory. It is currently implemented in a [private fork](https://git.ligo.org/kaushik.paul/lalsuite/-/tree/enigma_spins_v2023?ref_type=heads) of `LALSuite` (interested users are welcome to write to the developers for access at esigmahm@icts.res.in).  
 * **Plunge-merger-ringdown piece**: Assuming moderate starting eccentricities that will decay by the late inspiral, we use the quasi-circular NR surrogate `NRSur7dq4` for the plunge-merger-ringdown piece for `ESIGMAHM`. This requires the `NRSur7dq4`'s [data file](https://git.ligo.org/lscsoft/lalsuite-extra/-/blob/master/data/lalsimulation/NRSur7dq4.h5) to be downloaded. 
 
   (_Note:_ We also allow other `LALSuite` waveform models to be used as the plunge-merger-ringdown piece; see the optional argument `merger_ringdown_approximant` in the generation functions `get_imr_esigma_waveform` and `get_imr_esigma_modes` [here](https://github.com/gwnrtools/esigmapy/blob/master/esigmapy/generator.py). However, the default and the most tested choice is `NRSur7dq4`)
@@ -11,7 +11,9 @@ The full IMR waveform `ESIGMAHM` is then produced by smoothly attaching the insp
 
 ## Installing `InspiralESIGMAHM`
 
-* **Getting the source code:** Clone this [`LALSuite` fork](https://git.ligo.org/kaushik.paul/lalsuite/-/tree/enigma_spins_v2023?ref_type=heads) and switch to the branch `enigma_spins_v2023` which contains the implementation of the inspiral piece of `ESIGMAHM`.
+* **Getting the source code:** The `LALSuite` fork containing the implementation of `InspiralESIGMAHM` is currently private, but interested users are welcome to write to the developers for access at esigmahm@icts.res.in. 
+
+  Clone this [`LALSuite` fork](https://git.ligo.org/kaushik.paul/lalsuite/-/tree/enigma_spins_v2023?ref_type=heads) and checkout the relevant commit identified by the tag `ESIGMAHMv1` which contains the current stable implementation of the inspiral piece of `ESIGMAHM`.
 
   ```
   git clone https://git.ligo.org/kaushik.paul/lalsuite.git
@@ -42,7 +44,12 @@ The full IMR waveform `ESIGMAHM` is then produced by smoothly attaching the insp
 * To avoid performing the above step in every new terminal session, either add the above command to your `.bashrc` file, or follow the instructions [here](http://gitlab.icts.res.in/akash.maurya/Installation-instructions/wikis/conda-tricks), replacing `PYTHONPATH` with `LAL_DATA_PATH`, to set this environment variable automatically on activating your `conda` environment.
 
 ## Installing `ESIGMAPy`
-* Activate your `conda` environment and install `ESIGMAPy` by running: `pip install git+https://github.com/gwnrtools/esigmapy.git` 
+* Activate your `conda` environment and install `ESIGMAPy` by running: `pip install esigmapy`.
 
 ***
+## Trying out `ESIGMAHM`
 If everything goes fine, you should be able to generate `ESIGMAHM` waveforms. The instructions to do so and the various functionalities that `ESIGMAHM` offers are detailed in [this tutorial notebook](https://github.com/gwnrtools/esigmapy/blob/master/notebooks/ESIGMA_generation.ipynb). 
+
+***
+## 📬 Contact Us  
+If you have any questions, issues, or suggestions regarding the model, feel free to reach out to us at esigmahm@icts.res.in!
