@@ -53,3 +53,7 @@ If everything goes fine, you should be able to generate `ESIGMAHM` waveforms. Th
 ***
 ## 📬 Contact Us  
 If you have any questions, issues, or suggestions regarding the model, feel free to reach out to us at esigmahm@icts.res.in!
+
+***
+## Citation
+ESIGMAHM is built on the ENIGMA framework. There were several works (arXiv:[1609.05933](https://arxiv.org/abs/1609.05933), arXiv:[1711.06276](https://arxiv.org/abs/1711.06276), arXiv:[2008.03313](https://arxiv.org/abs/2008.03313)) in the past to develop ENIGMA. In addition to citing the ESIGMAHM model (arXiv:[2409.13866](https://arxiv.org/abs/2409.13866)), please consider citing the works related to ENIGMA as well. 
