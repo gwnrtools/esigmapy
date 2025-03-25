@@ -51,9 +51,23 @@ The full IMR waveform `ESIGMAHM` is then produced by smoothly attaching the insp
 If everything goes fine, you should be able to generate `ESIGMAHM` waveforms. The instructions to do so and the various functionalities that `ESIGMAHM` offers are detailed in [this tutorial notebook](https://github.com/gwnrtools/esigmapy/blob/master/notebooks/ESIGMA_generation.ipynb). 
 
 ***
-## 📬 Contact Us  
-If you have any questions, issues, or suggestions regarding the model, feel free to reach out to us at esigmahm@icts.res.in!
+## Citation
+If you use `ESIGMAHM` in your work, please consider citing it: 
+
+Paul et. al., _"ESIGMAHM: An Eccentric, Spinning inspiral-merger-ringdown waveform model with Higher Modes for the detection and characterization of binary black holes"_, arXiv:[2409.13866](https://arxiv.org/abs/2409.13866) (2024)
+```
+@article{Paul:2024ujx,
+    author = "Paul, Kaushik and Maurya, Akash and Henry, Quentin and Sharma, Kartikey and Satheesh, Pranav and Divyajyoti and Kumar, Prayush and Mishra, Chandra Kant",
+    title = "{ESIGMAHM: An Eccentric, Spinning inspiral-merger-ringdown waveform model with Higher Modes for the detection and characterization of binary black holes}",
+    eprint = "2409.13866",
+    archivePrefix = "arXiv",
+    primaryClass = "gr-qc",
+    month = "9",
+    year = "2024"
+}
+```
+`ESIGMAHM` is built on the `ENIGMA` framework, which was developed in arXiv:[1609.05933](https://arxiv.org/abs/1609.05933), arXiv:[1711.06276](https://arxiv.org/abs/1711.06276), arXiv:[2008.03313](https://arxiv.org/abs/2008.03313). Thus, in addition to citing `ESIGMAHM`, please consider citing these works related to ENIGMA as well. 
 
 ***
-## Citation
-ESIGMAHM is built on the ENIGMA framework. There were several works (arXiv:[1609.05933](https://arxiv.org/abs/1609.05933), arXiv:[1711.06276](https://arxiv.org/abs/1711.06276), arXiv:[2008.03313](https://arxiv.org/abs/2008.03313)) in the past to develop ENIGMA. In addition to citing the ESIGMAHM model (arXiv:[2409.13866](https://arxiv.org/abs/2409.13866)), please consider citing the works related to ENIGMA as well. 
+## 📬 Contact Us  
+If you have any questions, issues, or suggestions regarding the model, feel free to reach out to us at esigmahm@icts.res.in!
