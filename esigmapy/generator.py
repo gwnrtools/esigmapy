@@ -210,9 +210,8 @@ def get_inspiral_esigma_modes(
             for name in return_orbital_params:
                 if name not in all_orbital_var_names:
                     raise Exception(
-                        f"{name} is not a valid orbital variable name. Available orbital variable names are: {orbital_var_names}."
+                        f"{name} is not a valid orbital variable name. Available orbital variable names are: {all_orbital_var_names}."
                     )
-
 
     # Calculating the orbital variables, depending on user input.
     # Use of `f_ref` is activated
@@ -258,7 +257,7 @@ def get_inspiral_esigma_modes(
 
     if f_ref < f_lower:
         ref_idx = np.searchsorted(
-            (retval[1].data.data ** 1.5) / ((mass1 + mass2) * lal.MTSUN_SI * np.pi),
+            (retval[1].data.data**1.5) / ((mass1 + mass2) * lal.MTSUN_SI * np.pi),
             f_lower,
         )
         new_len = len(retval[0].data.data) - ref_idx
