@@ -205,30 +205,51 @@ def get_inspiral_esigma_modes(
     """
 
     if return_orbital_params:
-        orbital_var_names = ["x", "e", "l", "phi", "phidot", "r", "rdot"]
+        all_orbital_var_names = ["t", "x", "e", "l", "phi", "phidot", "r", "rdot"]
         if return_orbital_params != True:
             for name in return_orbital_params:
-                if name not in orbital_var_names:
+                if name not in all_orbital_var_names:
                     raise Exception(
                         f"{name} is not a valid orbital variable name. Available orbital variable names are: {orbital_var_names}."
                     )
 
+
+    # Calculating the orbital variables, depending on user input.
+    # Use of `f_ref` is activated
+    f_start = f_lower
     if f_ref is None:
-        f_ref = f_lower
+        f_start = f_lower
+        itime = time.perf_counter()
     elif f_ref > f_lower:
-        raise NotImplementedError("We do not support f_ref > f_lower yet.")
+        # Calculating new orbital variables
+        itime = time.perf_counter()
+        retval = ls.SimInspiralESIGMADynamicsBackwardInTime(
+            mass1,
+            mass2,
+            spin1z,
+            spin2z,
+            eccentricity,
+            f_ref,
+            f_lower,
+            mean_anomaly,
+            1e-12,
+            1 / delta_t,
+        )
+        t, x, e, l, phi, phidot, r, rdot = retval[:8]
+        eccentricity = e.data.data[-1]
+        mean_anomaly = l.data.data[-1]
+        f_start = f_lower
+    elif f_ref < f_lower:
+        itime = time.perf_counter()
+        f_start = f_ref
 
-    distance *= 1.0e6 * lal.PC_SI  # Mpc to SI conversion
-
-    # Calculating the orbital variables
-    itime = time.perf_counter()
     retval = ls.SimInspiralENIGMADynamics(
         mass1,
         mass2,
         spin1z,
         spin2z,
         eccentricity,
-        f_ref,
+        f_start,
         mean_anomaly,
         1e-12,
         1 / delta_t,
@@ -260,6 +281,7 @@ def get_inspiral_esigma_modes(
 
     itime = time.perf_counter()
     modes = {}
+    distance *= 1.0e6 * lal.PC_SI  # Mpc to SI conversion
     for el, em in modes_to_use:
         modes[(el, em)] = ls.SimInspiralENIGMAModeFromDynamics(
             el,
@@ -295,12 +317,12 @@ def get_inspiral_esigma_modes(
     if return_orbital_params:
         orbital_var_dict = {}
         if return_orbital_params == True:
-            return_orbital_params = orbital_var_names
+            return_orbital_params = all_orbital_var_names
 
         if return_pycbc_timeseries:
             for name in return_orbital_params:
                 exec(
-                    f"orbital_var_dict['{name}'] = pt.TimeSeries({name}.data.data, delta_t=delta_t, epoch=-delta_t * len({name}.data.data)"
+                    f"orbital_var_dict['{name}'] = pt.TimeSeries({name}.data.data, delta_t=delta_t, epoch=-delta_t * len({name}.data.data))"
                 )
             return orbital_var_dict, modes
 
