@@ -54,7 +54,7 @@ If everything goes fine, you should be able to generate `ESIGMAHM` waveforms. Th
 ## Citation
 If you use `ESIGMAHM` in your work, please consider citing it: 
 
-Paul et. al., _"ESIGMAHM: An Eccentric, Spinning inspiral-merger-ringdown waveform model with Higher Modes for the detection and characterization of binary black holes"_, DOI:[https://doi.org/10.1103/PhysRevD.111.084074](https://doi.org/10.1103/PhysRevD.111.084074), arXiv:[2409.13866](https://arxiv.org/abs/2409.13866) (2024)
+Paul et. al., _"ESIGMAHM: An Eccentric, Spinning inspiral-merger-ringdown waveform model with Higher Modes for the detection and characterization of binary black holes"_, [link to Phys. Rev. D](https://journals.aps.org/prd/abstract/10.1103/PhysRevD.111.084074), arXiv:[2409.13866](https://arxiv.org/abs/2409.13866) (2024)
 ```
 @article{Paul:2024ujx,
     author = "Paul, Kaushik and Maurya, Akash and Henry, Quentin and Sharma, Kartikey and Satheesh, Pranav and Divyajyoti and Kumar, Prayush and Mishra, Chandra Kant",
