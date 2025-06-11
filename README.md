@@ -58,12 +58,16 @@ Paul et. al., _"ESIGMAHM: An Eccentric, Spinning inspiral-merger-ringdown wavefo
 ```
 @article{Paul:2024ujx,
     author = "Paul, Kaushik and Maurya, Akash and Henry, Quentin and Sharma, Kartikey and Satheesh, Pranav and Divyajyoti and Kumar, Prayush and Mishra, Chandra Kant",
-    title = "{ESIGMAHM: An Eccentric, Spinning inspiral-merger-ringdown waveform model with Higher Modes for the detection and characterization of binary black holes}",
+    title = "{Eccentric, spinning, inspiral-merger-ringdown waveform model with higher modes for the detection and characterization of binary black holes}",
     eprint = "2409.13866",
     archivePrefix = "arXiv",
     primaryClass = "gr-qc",
-    month = "9",
-    year = "2024"
+    doi = "10.1103/PhysRevD.111.084074",
+    journal = "Phys. Rev. D",
+    volume = "111",
+    number = "8",
+    pages = "084074",
+    year = "2025"
 }
 ```
 `ESIGMAHM` is built on the `ENIGMA` framework, which was developed in arXiv:[1609.05933](https://arxiv.org/abs/1609.05933), arXiv:[1711.06276](https://arxiv.org/abs/1711.06276), arXiv:[2008.03313](https://arxiv.org/abs/2008.03313). Thus, in addition to citing `ESIGMAHM`, please consider citing these works related to ENIGMA as well. 
