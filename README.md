@@ -54,7 +54,7 @@ If everything goes fine, you should be able to generate `ESIGMAHM` waveforms. Th
 ## Citation
 If you use `ESIGMAHM` in your work, please consider citing it: 
 
-Paul et. al., _"ESIGMAHM: An Eccentric, Spinning inspiral-merger-ringdown waveform model with Higher Modes for the detection and characterization of binary black holes"_, [link to Phys. Rev. D](https://journals.aps.org/prd/abstract/10.1103/PhysRevD.111.084074), arXiv:[2409.13866](https://arxiv.org/abs/2409.13866) (2024)
+Paul et. al., _"ESIGMAHM: An Eccentric, Spinning inspiral-merger-ringdown waveform model with Higher Modes for the detection and characterization of binary black holes"_, [PhysRevD.111.084074](https://journals.aps.org/prd/abstract/10.1103/PhysRevD.111.084074), arXiv:[2409.13866](https://arxiv.org/abs/2409.13866) (2024)
 ```
 @article{Paul:2024ujx,
     author = "Paul, Kaushik and Maurya, Akash and Henry, Quentin and Sharma, Kartikey and Satheesh, Pranav and Divyajyoti and Kumar, Prayush and Mishra, Chandra Kant",
@@ -70,7 +70,7 @@ Paul et. al., _"ESIGMAHM: An Eccentric, Spinning inspiral-merger-ringdown wavefo
     year = "2025"
 }
 ```
-`ESIGMAHM` is built on the `ENIGMA` framework, which was developed in arXiv:[1609.05933](https://arxiv.org/abs/1609.05933), arXiv:[1711.06276](https://arxiv.org/abs/1711.06276), arXiv:[2008.03313](https://arxiv.org/abs/2008.03313). Thus, in addition to citing `ESIGMAHM`, please consider citing these works related to ENIGMA as well. 
+`ESIGMAHM` is built on the `ENIGMA` framework, which was developed in arXiv:[1609.05933](https://arxiv.org/abs/1609.05933), arXiv:[1711.06276](https://arxiv.org/abs/1711.06276), arXiv:[2008.03313](https://arxiv.org/abs/2008.03313). In addition to citing `ESIGMAHM`, please consider citing these works related to ENIGMA as well. 
 
 ***
 ## 📬 Contact Us  
