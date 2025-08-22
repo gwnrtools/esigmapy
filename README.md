@@ -70,7 +70,7 @@ Paul et. al., _"ESIGMAHM: An Eccentric, Spinning inspiral-merger-ringdown wavefo
     year = "2025"
 }
 ```
-`ESIGMAHM` is built on the `ENIGMA` framework, which was developed in arXiv:[1609.05933](https://arxiv.org/abs/1609.05933), arXiv:[1711.06276](https://arxiv.org/abs/1711.06276), arXiv:[2008.03313](https://arxiv.org/abs/2008.03313). In addition to citing `ESIGMAHM`, please consider citing these works related to ENIGMA as well. 
+`ESIGMAHM` is built on the `ENIGMA` framework, which was developed in arXiv:[1609.05933](https://arxiv.org/abs/1609.05933), arXiv:[1711.06276](https://arxiv.org/abs/1711.06276), arXiv:[2008.03313](https://arxiv.org/abs/2008.03313). In addition to citing `ESIGMAHM`, please consider citing these works related to `ENIGMA` as well. 
 
 ***
 ## 📬 Contact Us  
