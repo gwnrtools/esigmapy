@@ -109,6 +109,7 @@ if __name__ == "__main__":
         author_email="prayush.kumar@gmail.com",
         packages=find_packages(),
         package_dir={NAME: NAME},
+        entry_points = {"pycbc.waveform.td":"esigma = esigmapy:pycbc_esigma"},
         package_data={},
         install_requires=[
             # 'lalsuite>=6.63',
