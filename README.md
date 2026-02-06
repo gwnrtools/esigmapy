@@ -21,6 +21,7 @@ The full IMR waveform `ESIGMAHM` is then produced by smoothly attaching the insp
   git checkout ESIGMAHMv1
   ``` 
 * **Installing the code:**
+  - It is advised to create a conda environment using [`igwn`](https://computing.docs.ligo.org/conda/environments/igwn-py311/) and then install LALSuite inside it. This will minimize the dependency issue. Additionally, if you get an error related to `haswell` then please comment out or remove `- _x86_64-microarch-level=3=3_haswell` from the `.yaml` file.  
   - Activate your `conda` environment. Make sure that the `swig` version in this environment is below `4.2.1` (you can check this by running `conda list swig`). If not, install its version `4.0.2` by running `conda install -c conda-forge swig=4.0.2`. 
   - Now choose/create a directory where you want to install ESIGMA. Let the absolute path of this directory be `/path/to/esigmahm`.
   - Go back inside the above cloned `LALSuite` fork, and sequentially run the following commands: 
