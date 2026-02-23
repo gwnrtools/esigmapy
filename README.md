@@ -21,7 +21,8 @@ The full IMR waveform `ESIGMAHM` is then produced by smoothly attaching the insp
   git checkout ESIGMAHMv1
   ``` 
 * **Installing the code:**
-  - Activate your `conda` environment. Make sure that the `swig` version in this environment is below `4.2.1` (you can check this by running `conda list swig`). If not, install its version `4.2.0` by running `conda install -c conda-forge swig=4.2.0`. 
+  - It is advised to create a conda environment using [`igwn`](https://computing.docs.ligo.org/conda/environments/igwn-py311/) and then install LALSuite inside it. This will minimize the dependency issue. Additionally, if you get an error related to `haswell` then please comment out or remove `- _x86_64-microarch-level=3=3_haswell` from the `.yaml` file.  
+  - Activate your `conda` environment. Make sure that the `swig` version in this environment is below `4.2.1` (you can check this by running `conda list swig`). If not, install its version `4.0.2` by running `conda install -c conda-forge swig=4.0.2`. 
   - Now choose/create a directory where you want to install ESIGMA. Let the absolute path of this directory be `/path/to/esigmahm`.
   - Go back inside the above cloned `LALSuite` fork, and sequentially run the following commands: 
     
@@ -54,19 +55,23 @@ If everything goes fine, you should be able to generate `ESIGMAHM` waveforms. Th
 ## Citation
 If you use `ESIGMAHM` in your work, please consider citing it: 
 
-Paul et. al., _"ESIGMAHM: An Eccentric, Spinning inspiral-merger-ringdown waveform model with Higher Modes for the detection and characterization of binary black holes"_, arXiv:[2409.13866](https://arxiv.org/abs/2409.13866) (2024)
+Paul et. al., _"ESIGMAHM: An Eccentric, Spinning inspiral-merger-ringdown waveform model with Higher Modes for the detection and characterization of binary black holes"_, [PhysRevD.111.084074](https://journals.aps.org/prd/abstract/10.1103/PhysRevD.111.084074), arXiv:[2409.13866](https://arxiv.org/abs/2409.13866) (2024)
 ```
 @article{Paul:2024ujx,
     author = "Paul, Kaushik and Maurya, Akash and Henry, Quentin and Sharma, Kartikey and Satheesh, Pranav and Divyajyoti and Kumar, Prayush and Mishra, Chandra Kant",
-    title = "{ESIGMAHM: An Eccentric, Spinning inspiral-merger-ringdown waveform model with Higher Modes for the detection and characterization of binary black holes}",
+    title = "{Eccentric, spinning, inspiral-merger-ringdown waveform model with higher modes for the detection and characterization of binary black holes}",
     eprint = "2409.13866",
     archivePrefix = "arXiv",
     primaryClass = "gr-qc",
-    month = "9",
-    year = "2024"
+    doi = "10.1103/PhysRevD.111.084074",
+    journal = "Phys. Rev. D",
+    volume = "111",
+    number = "8",
+    pages = "084074",
+    year = "2025"
 }
 ```
-`ESIGMAHM` is built on the `ENIGMA` framework, which was developed in arXiv:[1609.05933](https://arxiv.org/abs/1609.05933), arXiv:[1711.06276](https://arxiv.org/abs/1711.06276), arXiv:[2008.03313](https://arxiv.org/abs/2008.03313). Thus, in addition to citing `ESIGMAHM`, please consider citing these works related to ENIGMA as well. 
+`ESIGMAHM` is built on the `ENIGMA` framework, which was developed in arXiv:[1609.05933](https://arxiv.org/abs/1609.05933), arXiv:[1711.06276](https://arxiv.org/abs/1711.06276), arXiv:[2008.03313](https://arxiv.org/abs/2008.03313). In addition to citing `ESIGMAHM`, please consider citing these works related to `ENIGMA` as well. 
 
 ***
 ## 📬 Contact Us  
