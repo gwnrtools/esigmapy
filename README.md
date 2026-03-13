@@ -52,6 +52,10 @@ The full IMR waveform `ESIGMAHM` is then produced by smoothly attaching the insp
 If everything goes fine, you should be able to generate `ESIGMAHM` waveforms. The instructions to do so and the various functionalities that `ESIGMAHM` offers are detailed in [this tutorial notebook](https://github.com/gwnrtools/esigmapy/blob/master/notebooks/ESIGMA_generation.ipynb). 
 
 ***
+## Trying out `ESIGMAHM` via gwsignal
+`ESIGMAHM` can now be accessed via [`gwsignal`](https://waveforms.docs.ligo.org/reviews/lalsuite/lalsimulation/gwsignal/index.html). [This tutorial notebook](https://github.com/gwnrtools/esigmapy/blob/cfe881a6052f1e9a7c3e066d9fd32462a3af2c89/notebooks/esigma_gwsignal.ipynb) shows how to use `ESIGMAHM` waveforms via `gwsignal`. 
+
+***
 ## Citation
 If you use `ESIGMAHM` in your work, please consider citing it: 
 
