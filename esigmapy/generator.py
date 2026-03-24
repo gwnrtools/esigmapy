@@ -11,6 +11,7 @@ import lal
 import lalsimulation as ls
 import pycbc.types as pt
 from .utils import f_ISCO_spin
+from .condition import apply_taper_both_pols
 
 ECCENTRICITY_LEVEL_ISCO_WARNING = 0.02
 ECCENTRICITY_LEVEL_ISCO_ERROR = 0.1
@@ -351,6 +352,7 @@ def get_inspiral_esigma_waveform(
     return_orbital_params=False,
     return_pycbc_timeseries=True,
     verbose=False,
+    condition=0,
     **kwargs,
 ):
     """
@@ -420,8 +422,13 @@ def get_inspiral_esigma_waveform(
     )
 
     if return_pycbc_timeseries:
-        hp = pt.TimeSeries(hp, delta_t=delta_t, epoch=-delta_t * (len(hp)-1))
-        hc = pt.TimeSeries(hc, delta_t=delta_t, epoch=-delta_t * (len(hc)-1))
+        if condition == 1:
+            hp = pt.TimeSeries(hp, delta_t=delta_t, epoch=-delta_t * (len(hp)-1))
+            hc = pt.TimeSeries(hc, delta_t=delta_t, epoch=-delta_t * (len(hc)-1))
+            hp, hc, _ = apply_taper_both_pols(hp, hc, method='cycles', n_cycles=1)            
+        else:
+            hp = pt.TimeSeries(hp, delta_t=delta_t, epoch=-delta_t * (len(hp)-1))
+            hc = pt.TimeSeries(hc, delta_t=delta_t, epoch=-delta_t * (len(hc)-1))
 
     if return_orbital_params:
         if return_pycbc_timeseries:
@@ -1079,6 +1086,7 @@ def get_imr_esigma_waveform(
     return_orbital_params=False,
     failsafe=True,
     verbose=False,
+    condition=0,
     **kwargs,
 ):
     """
@@ -1198,7 +1206,8 @@ def get_imr_esigma_waveform(
         coa_phase=np.pi / 2 - coa_phase,
         verbose=verbose,
     )
-
+    if condition == 1:
+        hp, hc, _ = apply_taper_both_pols(hp, hc, method='cycles', n_cycles=1)
     if return_hybridization_info and return_orbital_params:
         return hp, hc, orbital_vars_dict, retval
     elif return_hybridization_info:
