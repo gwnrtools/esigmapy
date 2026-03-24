@@ -55,7 +55,7 @@ def compute_taper_width(waveform, method='cycles', fixed_duration=0.3, n_cycles=
     return taper_width
 
 
-def apply_taper(waveform, beta=8, taper_width=None, method='cycles', fixed_duration=0.3, n_cycles=1):
+def apply_taper(waveform, beta=8, taper_width=None, method='cycles', fixed_duration=0.3, n_cycles=1,verbose=False):
     """
     Apply a time-domain taper to the start of the given waveform.
 
@@ -85,18 +85,19 @@ def apply_taper(waveform, beta=8, taper_width=None, method='cycles', fixed_durat
     # Auto-compute taper width if not provided
     if taper_width is None:
         taper_width = compute_taper_width(waveform, method=method, fixed_duration=fixed_duration, n_cycles=n_cycles)
-        print(f"Auto-computed taper width: {taper_width:.3f} s (method: {method})")
-    
+        if verbose:    
+            print(f"Auto-computed taper width: {taper_width:.3f} s (method: {method})")
+        
     t_end_taper = t_start + taper_width
     
     return td_taper(waveform, t_start, t_end_taper, beta=beta, side='left')
 
-def apply_taper_both_pols(hp, hc, beta=8, method='cycles', n_cycles=1):
+def apply_taper_both_pols(hp, hc, beta=8, method='cycles', n_cycles=1,verbose=False):
     """Apply consistent taper to both polarizations based on hp."""
     taper_width = compute_taper_width(hp, method=method, n_cycles=n_cycles)
-    #print(f"Taper width: {taper_width:.3f} s (computed from h+)")
-    
-    hp_tapered = apply_taper(hp, beta=beta, taper_width=taper_width, method='cycles', fixed_duration=0.3, n_cycles=1)
-    hc_tapered = apply_taper(hc, beta=beta, taper_width=taper_width, method='cycles', fixed_duration=0.3, n_cycles=1)
+    if verbose:    
+        print(f"Taper width: {taper_width:.3f} s (computed from h+)")
+    hp_tapered = apply_taper(hp, beta=beta, taper_width=taper_width, method='cycles', fixed_duration=0.3, n_cycles=1, verbose=verbose)
+    hc_tapered = apply_taper(hc, beta=beta, taper_width=taper_width, method='cycles', fixed_duration=0.3, n_cycles=1, verbose=verbose)
     
     return (hp_tapered, hc_tapered, taper_width)
