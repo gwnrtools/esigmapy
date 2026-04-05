@@ -205,7 +205,7 @@ def get_inspiral_esigma_modes(
     """
 
     if return_orbital_params:
-        all_orbital_var_names = ["t", "x", "e", "l", "phi", "phidot", "r", "rdot"]
+        all_orbital_var_names = ["x", "e", "l", "phi", "phidot", "r", "rdot"]
         if return_orbital_params != True:
             for name in return_orbital_params:
                 if name not in all_orbital_var_names:
@@ -218,6 +218,7 @@ def get_inspiral_esigma_modes(
     f_start = f_lower
     if f_ref is None:
         f_start = f_lower
+        f_ref = f_lower
         itime = time.perf_counter()
     elif f_ref > f_lower:
         # Calculating new orbital variables
@@ -989,7 +990,6 @@ requested is {f_mr_transition}Hz, which should be less than the maximum freq of
         except:
             f_lower_mr *= 0.8
             continue
-
     # Extracting only the modes we need
     modes_to_use = list(modes_inspiral_numpy.keys())
     modes_mr_numpy = {}
@@ -1044,7 +1044,7 @@ eccentricity at the end of inspiral was {orbital_eccentricity[-1]}
         )
 
     if verbose:
-        print("blendd.")
+        print("blended.")
 
     if return_hybridization_info and return_orbital_params_user:
         return modes_imr, orbital_vars_dict, retval
