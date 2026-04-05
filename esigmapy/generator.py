@@ -257,7 +257,7 @@ def get_inspiral_esigma_modes(
 
     if f_ref < f_lower:
         ref_idx = np.searchsorted(
-            (retval[1].data.data**1.5) / ((mass1 + mass2) * lal.MTSUN_SI * np.pi),
+            (retval[1].data.data ** 1.5) / ((mass1 + mass2) * lal.MTSUN_SI * np.pi),
             f_lower,
         )
         new_len = len(retval[0].data.data) - ref_idx
@@ -303,7 +303,7 @@ def get_inspiral_esigma_modes(
             k: pt.TimeSeries(
                 modes[k].data.data,
                 delta_t=delta_t,
-                epoch=-delta_t * (len(modes[k].data.data)-1),
+                epoch=-delta_t * (len(modes[k].data.data) - 1),
             )
             for k in modes
         }
@@ -420,8 +420,8 @@ def get_inspiral_esigma_waveform(
     )
 
     if return_pycbc_timeseries:
-        hp = pt.TimeSeries(hp, delta_t=delta_t, epoch=-delta_t * (len(hp)-1))
-        hc = pt.TimeSeries(hc, delta_t=delta_t, epoch=-delta_t * (len(hc)-1))
+        hp = pt.TimeSeries(hp, delta_t=delta_t, epoch=-delta_t * (len(hp) - 1))
+        hc = pt.TimeSeries(hc, delta_t=delta_t, epoch=-delta_t * (len(hc) - 1))
 
     if return_orbital_params:
         if return_pycbc_timeseries:
@@ -990,12 +990,14 @@ requested is {f_mr_transition}Hz, which should be less than the maximum freq of
             f_lower_mr *= 0.8
             continue
 
-    modes_mr = {}
+    # Extracting only the modes we need
+    modes_to_use = list(modes_inspiral_numpy.keys())
+    modes_mr_numpy = {}
     while hlm_mr is not None:
-        modes_mr[(hlm_mr.l, hlm_mr.m)] = hlm_mr.mode
+        key = (hlm_mr.l, hlm_mr.m)
+        if key in modes_to_use:
+            modes_mr_numpy[key] = hlm_mr.mode.data.data
         hlm_mr = hlm_mr.next
-
-    modes_mr_numpy = {k: np.asarray(modes_mr[k].data.data) for k in modes_mr}
 
     try:
         retval = esigmapy.blend.blend_modes(
