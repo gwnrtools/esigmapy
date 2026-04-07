@@ -86,12 +86,12 @@ The instructions to generate `ESIGMAHM` waveforms and the various functionalitie
 
 ## :green_square: ESIGMASur
 
-`ESIGMASur` is a fast time-domain surrogate model of inspiral (2,2)-mode of `ESIGMAHM`.
+`ESIGMASur` is a fast time-domain surrogate model of the (2,2)-mode of `ESIGMAHM`.
 
 ### Installation
 * Install `ESIGMAPy` by running:
   ```bash
-  pip install git+https://github.com/gwnrtools/esigmapy.git`.
+  pip install git+https://github.com/gwnrtools/esigmapy.git
   ```
   It **does not** require the custom LALSuite installation above. 
 
