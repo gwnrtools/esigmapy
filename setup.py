@@ -115,10 +115,10 @@ if __name__ == "__main__":
             "lscsoft_glue>=2.0.0",
             "matplotlib>=2.1",
             "numpy",
-            "pathlib",
             "pycbc",
-            "pytest",
             "scipy>=1.2.3",
+            "tpi-splines",
+            "numba",
         ],
         scripts=[],
     )
