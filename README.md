@@ -1,4 +1,4 @@
-# ESIGMAPy: a Python package to generate `ESIGMA` waveforms
+# ESIGMAPy: a Python package to generate ESIGMA waveforms
 
 `ESIGMAPy` provides access to two eccentric waveform models:
 
@@ -17,8 +17,8 @@ Install via:
 pip install git+https://github.com/gwnrtools/esigmapy.git
 ```
 Then to use:
- * `ESIGMAHM`: requires custom `LALSuite` installation and `NRSur7dq4` surrogate data download ([installation instructions below](update link)).
- * `ESIGMASur`: requires downloading `ESIGMASur` surrogate data ([installation instructions below](update link))
+ * `ESIGMAHM`: requires custom `LALSuite` installation and `NRSur7dq4` surrogate data download ([installation instructions below](https://github.com/gwnrtools/esigmapy/tree/master?tab=readme-ov-file#blue_square-esigmahm)).
+ * `ESIGMASur`: requires downloading `ESIGMASur` surrogate data ([installation instructions below](https://github.com/gwnrtools/esigmapy/tree/master?tab=readme-ov-file#green_square-esigmasur))
  
 Usage instructions at:
  * `ESIGMAHM` [tutorial notebook](https://github.com/gwnrtools/esigmapy/blob/master/notebooks/ESIGMA_tutorial.ipynb)
@@ -99,7 +99,7 @@ The instructions to generate `ESIGMAHM` waveforms and the various functionalitie
     
 * Download the surrogate data files of `ESIGMASur`, which can be found [on the repo](https://github.com/gwnrtools/esigmapy/tree/master/esigmapy/surrogate/data). Next, set the shell environment variable `ESIGMASUR_DATA_PATH` to the directory where you keep these surrogate data files by running: `export ESIGMASUR_DATA_PATH="/path/to/ESIGMASur"`.
 
-* Using the inspiral-only surrogate `InspiralESIGMASur` would not require any further dependencies. However, its hybridized IMR version `IMRESIGMASur` will require downloading the NR surrogate data file ([installation instructions above](update link)). 
+* Using the inspiral-only surrogate `InspiralESIGMASur` would not require any further dependencies. However, its hybridized IMR version `IMRESIGMASur` will require downloading the NR surrogate data file ([installation instructions above](https://github.com/gwnrtools/esigmapy/tree/master#installing-nrsur7dq4)). 
 
 ### Trying out `ESIGMASur`
 The usage instructions and the various functionalities of `ESIGMASur` are detailed in [this tutorial notebook](https://github.com/gwnrtools/esigmapy/blob/master/notebooks/ESIGMASur_tutorial.ipynb).
