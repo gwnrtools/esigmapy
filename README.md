@@ -106,7 +106,7 @@ The usage instructions and the various functionalities of `ESIGMASur` are detail
 
 ***
 ## 📖 Citation
-* If you use `ESIGMAHM` in your work, please consider citing:
+* If you use `ESIGMAHM` in your work, please cite:
   
   Paul et al., _"ESIGMAHM: An Eccentric, Spinning inspiral-merger-ringdown waveform model with Higher Modes for the detection and characterization of binary black holes"_, [PhysRevD.111.084074](https://journals.aps.org/prd/abstract/10.1103/PhysRevD.111.084074), arXiv:[2409.13866](https://arxiv.org/abs/2409.13866) (2024)
 
@@ -127,7 +127,7 @@ The usage instructions and the various functionalities of `ESIGMASur` are detail
   ```
   `ESIGMAHM` is built on the `ENIGMA` framework, which was developed in arXiv:[1609.05933](https://arxiv.org/abs/1609.05933), arXiv:[1711.06276](https://arxiv.org/abs/1711.06276), arXiv:[2008.03313](https://arxiv.org/abs/2008.03313). In addition to citing `ESIGMAHM`, please consider citing them as well. 
 
-* If you use `ESIGMASur` in your work, please consider citing:
+* If you use `ESIGMASur` in your work, please cite:
 
   Maurya et al., _"Chase Orbits, not Time: A Scalable Paradigm for Long-Duration Eccentric Gravitational-Wave Surrogates"_, arXiv:[2510.00116](https://arxiv.org/abs/2510.00116) (2025)
 
