@@ -206,7 +206,7 @@ def get_inspiral_esigma_modes(
     """
 
     if return_orbital_params:
-        all_orbital_var_names = ["t", "x", "e", "l", "phi", "phidot", "r", "rdot"]
+        all_orbital_var_names = ["x", "e", "l", "phi", "phidot", "r", "rdot"]
         if return_orbital_params != True:
             for name in return_orbital_params:
                 if name not in all_orbital_var_names:
@@ -219,6 +219,7 @@ def get_inspiral_esigma_modes(
     f_start = f_lower
     if f_ref is None:
         f_start = f_lower
+        f_ref = f_lower
         itime = time.perf_counter()
     elif f_ref > f_lower:
         # Calculating new orbital variables
@@ -258,7 +259,7 @@ def get_inspiral_esigma_modes(
 
     if f_ref < f_lower:
         ref_idx = np.searchsorted(
-            (retval[1].data.data**1.5) / ((mass1 + mass2) * lal.MTSUN_SI * np.pi),
+            (retval[1].data.data ** 1.5) / ((mass1 + mass2) * lal.MTSUN_SI * np.pi),
             f_lower,
         )
         new_len = len(retval[0].data.data) - ref_idx
@@ -304,7 +305,7 @@ def get_inspiral_esigma_modes(
             k: pt.TimeSeries(
                 modes[k].data.data,
                 delta_t=delta_t,
-                epoch=-delta_t * (len(modes[k].data.data)-1),
+                epoch=-delta_t * (len(modes[k].data.data) - 1),
             )
             for k in modes
         }
@@ -996,13 +997,14 @@ requested is {f_mr_transition}Hz, which should be less than the maximum freq of
         except:
             f_lower_mr *= 0.8
             continue
-
-    modes_mr = {}
+    # Extracting only the modes we need
+    modes_to_use = list(modes_inspiral_numpy.keys())
+    modes_mr_numpy = {}
     while hlm_mr is not None:
-        modes_mr[(hlm_mr.l, hlm_mr.m)] = hlm_mr.mode
+        key = (hlm_mr.l, hlm_mr.m)
+        if key in modes_to_use:
+            modes_mr_numpy[key] = hlm_mr.mode.data.data
         hlm_mr = hlm_mr.next
-
-    modes_mr_numpy = {k: np.asarray(modes_mr[k].data.data) for k in modes_mr}
 
     try:
         retval = esigmapy.blend.blend_modes(
@@ -1049,7 +1051,7 @@ eccentricity at the end of inspiral was {orbital_eccentricity[-1]}
         )
 
     if verbose:
-        print("blendd.")
+        print("blended.")
 
     if return_hybridization_info and return_orbital_params_user:
         return modes_imr, orbital_vars_dict, retval

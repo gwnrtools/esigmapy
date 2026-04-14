@@ -1,9 +1,37 @@
-# Copyright (C) 2025 Kaushik Paul
+# Copyright (C) 2025 Kaushik Paul, Akash Maurya
 #
 from __future__ import absolute_import, print_function
 
 import lal
 import numpy as np
+
+
+def f22_from_x(x, M):
+    """
+    Parameters:
+    -----------
+    x: Dimensionless PN parameter
+    M: Total mass of binary (in solar masses)
+
+    Returns:
+    --------
+    f22: "Orbit-averaged (2,2)-mode GW frequency" (in Hz)
+    """
+    return x**1.5 / (M * lal.MTSUN_SI * lal.PI)
+
+
+def x_from_f22(f22, M):
+    """
+    Parameters:
+    -----------
+    f22: "Orbit-averaged (2,2)-mode GW frequency" (in Hz)
+    M:   Total mass of binary (in solar masses)
+
+    Returns:
+    --------
+    x:   Dimensionless PN parameter
+    """
+    return (M * lal.MTSUN_SI * lal.PI * f22) ** (2.0 / 3)
 
 
 def f_ISCO_spin(mass1, mass2, spin1z, spin2z):
