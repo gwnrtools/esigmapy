@@ -2511,181 +2511,150 @@ def SmallMassRatio(eta: float) -> float:
     return (1.0 - 2.0*eta - sqrt(1.0 - 4.0*eta)) / (2.0*eta)
 
 
-# ============ Kepler equation solvers =========================================
-
-def mikkola_finder(eccentricity: float, mean_anomaly: float) -> float:
-    """Mikkola's method for the eccentric anomaly."""
-    while mean_anomaly > pi:
-        mean_anomaly -= 2*pi
-    while mean_anomaly < -pi:
-        mean_anomaly += 2*pi
-
-    sgn = 1.0 if mean_anomaly >= 0.0 else -1.0
-    mean_anomaly *= sgn
-
-    a = (1.0 - eccentricity) / (4.0*eccentricity + 0.5)
-    b = 0.5 * mean_anomaly / (4.0*eccentricity + 0.5)
-
-    sgn_b = 1.0 if b >= 0.0 else -1.0
-    z = (b + sgn_b * sqrt(b*b + a**3))**(1.0/3.0)
-    s = z - a / z
-    s = s - 0.078 * s**5 / (1.0 + eccentricity)
-
-    ecc_anomaly = mean_anomaly + eccentricity * (3.0*s - 4.0*s**3)
-    return sgn * ecc_anomaly
-
-
-def pn_kepler_equation(eta: float, x: float, e: float, l: float) -> float:
-    """3PN-accurate Kepler equation solver via Newton's method."""
-    tol = 1.0e-12
-
-    if l == 0.0:
-        return 0.0
-
-    while l > pi:
-        l -= 2*pi
-    while l < -pi:
-        l += 2*pi
-
-    neg = False
-    if l < 0.0:
-        l = -l
-        neg = True
-
-    newt_thresh = tol * abs(1.0 - e)
-    u = mikkola_finder(e, l)
-
-    if e > 0.8 and l < pi/3.0:
-        trial = l / abs(1.0 - e)
-        if trial*trial > 6.0*abs(1.0 - e):
-            if l < pi:
-                trial = (6.0*l)**(1.0/3.0)
-        u = trial
-
-    if e < 1.0:
-        err = u - e*sin(u) - l
-        while abs(err) > newt_thresh:
-            u -= err / (1.0 - e*cos(u))
-            err = u - e*sin(u) - l
-
-    return -u if neg else u
-
-
-# ─── ODE right-hand-side dispatchers ─────────────────────────────────────────
+# ================== ODE right-hand-side dispatchers ==========================
 
 def dx_dt(radiation_pn_order: int,
           eta: float, m1: float, m2: float, S1z: float, S2z: float,
           x: float, e: float) -> float:
-    """dx/dt dispatcher."""
-    x5   = x**5
-    xsqx = x * sqrt(x)
 
-    if radiation_pn_order == 0 or radiation_pn_order == 1:
-        return x_dot_0pn(e, eta) * x5
+    x2 = x * x
+    x3 = x2 * x
+    xsqx = x * math.sqrt(x)
+    x5 = x**5
 
-    elif radiation_pn_order == 2:
-        return (x_dot_0pn(e, eta) + x_dot_1pn(e, eta)*x) * x5
+    # -------------------------
+    # Instantaneous PN part
+    # -------------------------
+    inst = x_dot_0pn(e, eta)
 
-    elif radiation_pn_order == 3:
-        return (x_dot_0pn(e, eta) +
-                x_dot_1pn(e, eta)*x +
-                x_dot_1_5_pn(e, eta, m1, m2, S1z, S2z)*xsqx) * x5 + \
-               x_dot_hereditary_1_5(e, eta, x)
+    if radiation_pn_order >= 2:
+        inst += x_dot_1pn(e, eta) * x
 
-    elif radiation_pn_order == 4:
-        return (x_dot_0pn(e, eta) +
-                x_dot_1pn(e, eta)*x +
-                x_dot_1_5_pn(e, eta, m1, m2, S1z, S2z)*xsqx +
-                x_dot_2pn(e, eta, x)*x*x +
-                x_dot_2pn_SS(e, eta, m1, m2, S1z, S2z)*x*x) * x5 + \
-               x_dot_hereditary_1_5(e, eta, x)
+    if radiation_pn_order >= 3:
+        inst += x_dot_1_5_pn(e, eta, m1, m2, S1z, S2z) * xsqx
 
-    elif radiation_pn_order == 5:
-        return (x_dot_0pn(e, eta) +
-                x_dot_1pn(e, eta)*x +
-                x_dot_1_5_pn(e, eta, m1, m2, S1z, S2z)*xsqx +
-                x_dot_2pn(e, eta, x)*x*x +
-                x_dot_2pn_SS(e, eta, m1, m2, S1z, S2z)*x*x +
-                x_dot_2_5pn_SO(e, eta, m1, m2, S1z, S2z)*x*x*sqrt(x)) * x5 + \
-               x_dot_hereditary_1_5(e, eta, x) + x_dot_hereditary_2_5(e, eta, x)
+    if radiation_pn_order >= 4:
+        inst += x_dot_2pn(e, eta, x) * x2
+        inst += x_dot_2pn_SS(e, eta, m1, m2, S1z, S2z) * x2
 
-    elif radiation_pn_order == 6:
-        return (x_dot_0pn(e, eta) +
-                x_dot_1pn(e, eta)*x +
-                x_dot_1_5_pn(e, eta, m1, m2, S1z, S2z)*xsqx +
-                x_dot_2pn(e, eta, x)*x*x +
-                x_dot_2pn_SS(e, eta, m1, m2, S1z, S2z)*x*x +
-                x_dot_2_5pn_SO(e, eta, m1, m2, S1z, S2z)*x*x*sqrt(x) +
-                x_dot_3pn(e, eta, x)*x**3 +
-                x_dot_3pn_SO(e, eta, m1, m2, S1z, S2z)*x**3 +
-                x_dot_3pn_SS(e, eta, m1, m2, S1z, S2z)*x**3) * x5 + \
-               x_dot_hereditary_1_5(e, eta, x) + \
-               x_dot_hereditary_2_5(e, eta, x) + \
-               x_dot_hereditary_3(e, eta, x)
+    if radiation_pn_order >= 5:
+        inst += x_dot_2_5pn_SO(e, eta, m1, m2, S1z, S2z) * x2 * math.sqrt(x)
 
-    else:  # >= 7: full 3.5PN + optional 4PN/4.5PN
-        xdot = (x_dot_0pn(e, eta) +
-                x_dot_1pn(e, eta)*x +
-                x_dot_1_5_pn(e, eta, m1, m2, S1z, S2z)*xsqx +
-                x_dot_2pn(e, eta, x)*x*x +
-                x_dot_2pn_SS(e, eta, m1, m2, S1z, S2z)*x*x +
-                x_dot_2_5pn_SO(e, eta, m1, m2, S1z, S2z)*x*x*sqrt(x) +
-                x_dot_3pn(e, eta, x)*x**3 +
-                x_dot_3pn_SO(e, eta, m1, m2, S1z, S2z)*x**3 +
-                x_dot_3pn_SS(e, eta, m1, m2, S1z, S2z)*x**3 +
-                x_dot_3_5pnSO(e, eta, m1, m2, S1z, S2z)*x**3*sqrt(x) +
-                x_dot_3_5_pn(e, eta)*x**3*sqrt(x) +
-                x_dot_3_5pn_SS(e, eta, m1, m2, S1z, S2z)*x**3*sqrt(x) +
-                x_dot_3_5pn_cubicSpin(e, eta, m1, m2, S1z, S2z)*x**3*sqrt(x) +
-                (x_dot_4pn(e, eta, x) +
-                 x_dot_4pnSO(e, eta, m1, m2, S1z, S2z) +
-                 x_dot_4pnSS(e, eta, m1, m2, S1z, S2z))*x**4 +
-                x_dot_4_5_pn(e, eta, x)*x**4*sqrt(x)) * x5 + \
-               x_dot_hereditary_1_5(e, eta, x) + \
-               x_dot_hereditary_2_5(e, eta, x) + \
-               x_dot_hereditary_3(e, eta, x)
-        return xdot
+    if radiation_pn_order >= 6:
+        inst += x_dot_3pn(e, eta, x) * x3
+        inst += x_dot_3pn_SO(e, eta, m1, m2, S1z, S2z) * x3
+        inst += x_dot_3pn_SS(e, eta, m1, m2, S1z, S2z) * x3
+
+    if radiation_pn_order >= 7:
+        inst += x_dot_3_5pnSO(e, eta, m1, m2, S1z, S2z) * x3 * math.sqrt(x)
+        inst += x_dot_3_5_pn(e, eta) * x3 * math.sqrt(x)
+        inst += x_dot_3_5pn_SS(e, eta, m1, m2, S1z, S2z) * x3 * math.sqrt(x)
+        inst += x_dot_3_5pn_cubicSpin(e, eta, m1, m2, S1z, S2z) * x3 * math.sqrt(x)
+    
+    if radiation_pn_order >= 8:
+        inst += (
+            x_dot_4pn(e, eta, x)
+            + x_dot_4pnSO(e, eta, m1, m2, S1z, S2z)
+            + x_dot_4pnSS(e, eta, m1, m2, S1z, S2z)
+        ) * (x2 * x2)
+
+    if radiation_pn_order >= 9:
+        inst += x_dot_4_5_pn(e, eta, x) * (x2 * x2) * math.sqrt(x)
+
+    if radiation_pn_order >= 10:
+        inst += 0.0 #dxdt_5pn(x, eta), not implemented
+
+    if radiation_pn_order >= 11:
+        inst += 0.0 #dxdt_5_5pn(x, eta), not implemented
+
+    if radiation_pn_order >= 12:
+        inst += 0.0 #dxdt_6pn(x, eta), not implemented 
+
+    # multiply ONLY instantaneous part
+    result = inst * x5
+
+    # -------------------------
+    # Hereditary part (NO x^5)
+    # -------------------------
+    if radiation_pn_order >= 3:
+        result += x_dot_hereditary_1_5(e, eta, x)
+
+    if radiation_pn_order >= 5:
+        result += x_dot_hereditary_2_5(e, eta, x)
+
+    if radiation_pn_order >= 6:
+        result += x_dot_hereditary_3(e, eta, x)
+
+    return result
 
 
 def de_dt(radiation_pn_order: int,
           eta: float, m1: float, m2: float, S1z: float, S2z: float,
           x: float, e: float) -> float:
-    """de/dt dispatcher."""
-    x4 = x**4
-    xsqx = x * sqrt(x)
 
-    if radiation_pn_order == 0 or radiation_pn_order == 1:
-        return e_dot_0pn(e, eta) * x4
+    x2 = x * x
+    x3 = x2 * x
+    x4 = x2 * x2
+    xsqx = x * sqrt(x)  
 
-    elif radiation_pn_order == 2:
-        return (e_dot_0pn(e, eta) + e_dot_1pn(e, eta)*x) * x4
+    # -------------------------
+    # Instantaneous PN part
+    # -------------------------
+    inst = e_dot_0pn(e, eta)
 
-    elif radiation_pn_order == 3:
-        return (e_dot_0pn(e, eta) + e_dot_1pn(e, eta)*x +
-                e_dot_1_5pn_SO(e, m1, m2, S1z, S2z)*xsqx) * x4 + \
-               e_rad_hereditary_1_5(e, eta, x)
+    if radiation_pn_order >= 1:
+        inst += e_dot_1pn(e, eta) * x
 
-    elif radiation_pn_order == 4:
-        return (e_dot_0pn(e, eta) + e_dot_1pn(e, eta)*x +
-                e_dot_2pn(e, eta)*x*x +
-                e_dot_1_5pn_SO(e, m1, m2, S1z, S2z)*xsqx +
-                e_dot_2pn_SS(e, m1, m2, S1z, S2z)*x*x) * x4 + \
-               e_rad_hereditary_1_5(e, eta, x)
+    if radiation_pn_order >= 3:
+        inst += e_dot_1_5pn_SO(e, m1, m2, S1z, S2z) * xsqx
 
-    else:  # >= 5: full 3.5PN
-        edot = (e_dot_0pn(e, eta) + e_dot_1pn(e, eta)*x +
-                e_dot_2pn(e, eta)*x*x +
-                e_dot_3pn(e, eta, x)*x**3 +
-                e_dot_3_5pn(e, eta)*x**3*sqrt(x) +
-                e_dot_1_5pn_SO(e, m1, m2, S1z, S2z)*xsqx +
-                e_dot_2pn_SS(e, m1, m2, S1z, S2z)*x*x +
-                e_dot_2_5pn_SO(e, m1, m2, S1z, S2z)*x*x*sqrt(x) +
-                (e_dot_3pn_SO(e, m1, m2, S1z, S2z) +
-                 e_dot_3pn_SS(e, m1, m2, S1z, S2z))*x**3) * x4 + \
-               e_rad_hereditary_1_5(e, eta, x) + \
-               e_rad_hereditary_2_5(e, eta, x) + \
-               e_rad_hereditary_3(e, eta, x)
-        return edot
+    if radiation_pn_order >= 4:
+        inst += e_dot_2pn(e, eta) * x2
+        inst += e_dot_2pn_SS(e, m1, m2, S1z, S2z) * x2
+
+    if radiation_pn_order >= 5:
+        inst += e_dot_2_5pn_SO(e, m1, m2, S1z, S2z) * x2 * sqrt(x)
+
+    if radiation_pn_order >= 6:
+        inst += e_dot_3pn(e, eta, x) * x3
+        inst += e_dot_3_5pn(e, eta) * x3 * sqrt(x)
+        inst += e_dot_3pn_SO(e, m1, m2, S1z, S2z) * x3
+        inst += e_dot_3pn_SS(e, m1, m2, S1z, S2z) * x3
+
+    if radiation_pn_order >= 7:
+        inst += 0.0 # placeholder for higher order terms, not implemented
+
+    if radiation_pn_order >= 8:
+        inst += 0.0 # placeholder for higher order terms, not implemented
+
+    if radiation_pn_order >= 9:
+        inst += 0.0 # placeholder for higher order terms, not implemented
+
+    if radiation_pn_order >= 10:
+        inst += 0.0 # placeholder for higher order terms, not implemented
+
+    if radiation_pn_order >= 11:
+        inst += 0.0 # placeholder for higher order terms, not implemented
+
+    if radiation_pn_order >= 12:
+        inst += 0.0 # placeholder for higher order terms, not implemented
+
+    # multiply only instantaneous part
+    result = inst * x4
+
+    # -------------------------
+    # Hereditary part (NOT multiplied by x^4)
+    # -------------------------
+    if radiation_pn_order >= 3:
+        result += e_rad_hereditary_1_5(e, eta, x)
+
+    if radiation_pn_order >= 5:
+        result += e_rad_hereditary_2_5(e, eta, x)
+
+    if radiation_pn_order >= 6:
+        result += e_rad_hereditary_3(e, eta, x)
+
+    return result
 
 
 def dl_dt(eta: float, m1: float, m2: float, S1z: float, S2z: float,
@@ -2722,57 +2691,138 @@ def dphi_dt(u: float, eta: float, m1: float, m2: float, S1z: float, S2z: float,
     )
 
 
-# ─── Main ODE function (replaces eccentric_x_model_odes) ─────────────────────
+# ================== Kepler equation solvers ==========================
 
-def eccentric_x_model_odes(t: float,
-                            y: list,
-                            eta: float, m1: float, m2: float,
-                            S1z: float, S2z: float,
-                            radiation_pn_order: int) -> list:
+def pow1_3(x): return x ** (1.0/3.0)
+def pow3(x): return x * x * x
+def pow5(x): return x * x * x * x * x
+
+def mikkola_finder(eccentricity, mean_anomaly):
     """
-    ODE right-hand side for the ENIGMA PN inspiral model.
-
-    Parameters
-    ----------
-    t : float
-        Current time (unused, but required by ODE solvers).
-    y : list or array [x, e, l, phi]
-        State vector:
-          x   — PN parameter (v/c)^2
-          e   — eccentricity
-          l   — mean anomaly
-          phi — orbital phase
-    eta, m1, m2, S1z, S2z : float
-        Binary parameters.
-    radiation_pn_order : int
-        PN order selector (0-12).
-
-    Returns
-    -------
-    dydt : list [dx/dt, de/dt, dl/dt, dphi/dt]
-
-    Notes
-    -----
-    Use with scipy.integrate.solve_ivp or odeint:
-        from scipy.integrate import solve_ivp
-        import functools
-        rhs = functools.partial(eccentric_x_model_odes,
-                                eta=eta, m1=m1, m2=m2,
-                                S1z=S1z, S2z=S2z,
-                                radiation_pn_order=radiation_pn_order)
-        sol = solve_ivp(rhs, [t0, t_end], y0, ...)
+    Solves Kepler's equation using Mikkola's method for an initial guess.
     """
-    x, e, l, phi = y
+    # Range reduction of mean_anomaly to [-pi, pi]
+    while mean_anomaly > math.pi:
+        mean_anomaly -= 2 * math.pi
+    while mean_anomaly < -math.pi:
+        mean_anomaly += 2 * math.pi
 
+    # Compute the sign of l
+    sgn_mean_anomaly = 1.0 if mean_anomaly >= 0.0 else -1.0
+    mean_anomaly *= sgn_mean_anomaly
+
+    # compute alpha and beta of Mikkola Eq. (9a)
+    a = (1.0 - eccentricity) / (4.0 * eccentricity + 0.5)
+    b = (0.5 * mean_anomaly) / (4.0 * eccentricity + 0.5)
+
+    # compute the sign of beta needed in Eq. (9b)
+    sgn_b = 1.0 if b >= 0.0 else -1.0
+
+    # Mikkola Eq. (9b)
+    # Using your existing pow1_3 function
+    z = pow1_3(b + sgn_b * math.sqrt(b * b + a * a * a))
+    
+    # Mikkola Eq. (9c)
+    s = z - a / z
+    
+    # add the correction given in Mikkola Eq. (7)
+    # Using your existing pow5 function
+    s = s - 0.078 * pow5(s) / (1.0 + eccentricity)
+    
+    # finally Mikkola Eq. (8) gives u
+    # Using your existing pow3 function
+    ecc_anomaly = mean_anomaly + eccentricity * (3.0 * s - 4.0 * pow3(s))
+    
+    # correct the sign of u
+    return ecc_anomaly * sgn_mean_anomaly
+
+
+def pn_kepler_equation(eta, x, e, l):
+    """
+    3PN accurate Kepler equation solver using Newton's method.
+    """
+    # (void)eta, (void)x equivalents are unnecessary in Python
+    mean_anom_negative = False
+    u = 0.0
+    tol = 1.0e-12
+
+    if l == 0:
+        return u
+
+    # range reduction of the l
+    while l > math.pi:
+        l -= 2 * math.pi
+    while l < -math.pi:
+        l += 2 * math.pi
+
+    # solve in the positive part of the orbit
+    if l < 0.0:
+        l = -l
+        mean_anom_negative = True
+
+    newt_thresh = tol * abs(1.0 - e)
+    
+    # use mikkola for a guess
+    u = mikkola_finder(e, l)
+
+    # high eccentricity case
+    if (e > 0.8) and (l < math.pi / 3.0):
+        trial = l / abs(1.0 - e)
+        if trial * trial > 6.0 * abs(1.0 - e):
+            # cubic term is dominant
+            if l < math.pi:
+                trial = pow1_3(6.0 * l)
+        u = trial
+
+    # iterate using Newton's method to get solution
+    if e < 1.0:
+        newt_err = u - e * math.sin(u) - l
+        while abs(newt_err) > newt_thresh:
+            u -= newt_err / (1.0 - e * math.cos(u))
+            newt_err = u - e * math.sin(u) - l
+            
+    return -u if mean_anom_negative else u
+
+# ================== ODE system for eccentric models ==========================
+
+def eccentric_x_model_odes(t, y, params):
+    """
+    ODE system for eccentric gravitational wave models.
+    y = [x, e, l, phi]
+    """
+    # Assuming params is an object or dictionary
+    # In Python, we usually access attributes directly
+    eta = params.eta
+    m1 = params.m1
+    m2 = params.m2
+    S1z = params.S1z
+    S2z = params.S2z
+    radiation_pn_order = params.radiation_pn_order
+
+    # Input variables
+    x, e, l = y[0], y[1], y[2]
+
+    # Calculate eccentric anomaly
     u = pn_kepler_equation(eta, x, e, l)
 
-    dxdt_val   = dx_dt(radiation_pn_order, eta, m1, m2, S1z, S2z, x, e)
-    dedt_val   = de_dt(radiation_pn_order, eta, m1, m2, S1z, S2z, x, e)
-    dldt_val   = dl_dt(eta, m1, m2, S1z, S2z, x, e)
+    dydt = [0.0, 0.0, 0.0, 0.0]
 
-    if e:
-        dphidt_val = dphi_dt(u, eta, m1, m2, S1z, S2z, x, e)
+    if e != 0:
+        dydt[0] = dx_dt(radiation_pn_order, eta, m1, m2, S1z, S2z, x, e)
+        dydt[1] = de_dt(radiation_pn_order, eta, m1, m2, S1z, S2z, x, e)
+        dydt[2] = dl_dt(eta, m1, m2, S1z, S2z, x, e)
+        dydt[3] = dphi_dt(u, eta, m1, m2, S1z, S2z, x, e)
     else:
-        dphidt_val = x * sqrt(x)  # zero-eccentricity limit
+        # zero eccentricity limit (arXiv:0909.0066)
+        dydt[0] = dx_dt(radiation_pn_order, eta, m1, m2, S1z, S2z, x, e)
+        dydt[1] = de_dt(radiation_pn_order, eta, m1, m2, S1z, S2z, x, e)
+        dydt[2] = dl_dt(eta, m1, m2, S1z, S2z, x, e)
+        dydt[3] = x * math.sqrt(x)
 
-    return [dxdt_val, dedt_val, dldt_val, dphidt_val]
+    # Check for NaN (equivalent to XLAL_REAL8_FAIL_NAN)
+    if math.isnan(dydt[0]) or math.isnan(dydt[1]):
+        # You can raise an exception or return a specific error code
+        raise ValueError("ODE derivative calculated as NaN")
+
+    return dydt
+
