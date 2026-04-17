@@ -2719,18 +2719,15 @@ def mikkola_finder(eccentricity, mean_anomaly):
     sgn_b = 1.0 if b >= 0.0 else -1.0
 
     # Mikkola Eq. (9b)
-    # Using your existing pow1_3 function
     z = pow1_3(b + sgn_b * sqrt(b * b + a * a * a))
     
     # Mikkola Eq. (9c)
     s = z - a / z
     
     # add the correction given in Mikkola Eq. (7)
-    # Using your existing pow5 function
     s = s - 0.078 * pow5(s) / (1.0 + eccentricity)
     
     # finally Mikkola Eq. (8) gives u
-    # Using your existing pow3 function
     ecc_anomaly = mean_anomaly + eccentricity * (3.0 * s - 4.0 * pow3(s))
     
     # correct the sign of u
@@ -2741,7 +2738,6 @@ def pn_kepler_equation(eta, x, e, l):
     """
     3PN accurate Kepler equation solver using Newton's method.
     """
-    # (void)eta, (void)x equivalents are unnecessary in Python
     mean_anom_negative = False
     u = 0.0
     tol = 1.0e-12
@@ -2791,7 +2787,6 @@ def eccentric_x_model_odes(t, y, params):
     y = [x, e, l, phi]
     """
     # Assuming params is an object or dictionary
-    # In Python, we usually access attributes directly
     eta = params.eta
     m1 = params.m1
     m2 = params.m2
@@ -2821,7 +2816,7 @@ def eccentric_x_model_odes(t, y, params):
 
     # Check for NaN (equivalent to XLAL_REAL8_FAIL_NAN)
     if math.isnan(dydt[0]) or math.isnan(dydt[1]):
-        # You can raise an exception or return a specific error code
+        # Raise an exception or return a specific error code
         raise ValueError("ODE derivative calculated as NaN")
 
     return dydt
