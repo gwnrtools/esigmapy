@@ -1089,13 +1089,13 @@ def e_dot_2pn(e: float, eta: float) -> float:
     e_4_rt = e_pow_4 * (565.0 / 6.0 - 113.0 * eta / 3.0)
 
     if e != 0.0:
-        pre_factor = -e * eta / (e_fact**4 * math.sqrt(e_fact))
+        pre_factor = -e * eta / (e_fact**4 * sqrt(e_fact))
         e_2_pn = pre_factor * (
             zero_term
             + e_2_term
             + e_4_term
             + e_6_term
-            + math.sqrt(e_fact) * (zero_rt + e_2_rt + e_4_rt)
+            + sqrt(e_fact) * (zero_rt + e_2_rt + e_4_rt)
         )
     else:
         e_2_pn = 0.0
@@ -1136,7 +1136,7 @@ def e_dot_2_5pn_SO(e: float, m1: float, m2: float, S1z: float, S2z: float) -> fl
 
     e_fact = 1.0 - e_2
     e_fact_2 = e_fact * e_fact
-    e_fact_sqrt = math.sqrt(e_fact)
+    e_fact_sqrt = sqrt(e_fact)
     e_fact_55 = e_fact_2 * e_fact_2 * e_fact * e_fact_sqrt
 
     M = m1 + m2
@@ -1240,7 +1240,7 @@ def e_dot_3pn(e: float, eta: float, x: float) -> float:
     e_pow_8 = e_pow_6 * e_pow_2
 
     e_fact = 1.0 - e_pow_2
-    sqrt_e_fact = math.sqrt(e_fact)
+    sqrt_e_fact = sqrt(e_fact)
 
     pi_pow_2 = math.pi * math.pi
 
@@ -1366,7 +1366,7 @@ def e_dot_3pn_SS(e: float, m1: float, m2: float, S1z: float, S2z: float) -> floa
 
     e_fact = 1.0 - e_2
     e_fact_2 = e_fact * e_fact
-    e_fact_sqrt = math.sqrt(e_fact)
+    e_fact_sqrt = sqrt(e_fact)
     e_fact_55 = e_fact_2 * e_fact_2 * e_fact * e_fact_sqrt
 
     M = m1 + m2
@@ -1683,13 +1683,13 @@ def phi_dot_2_5pn_SO(e: float, m1: float, m2: float, S1z: float, S2z: float, u: 
     e_6 = e_4 * e_2
 
     e_fact = 1.0 - e_2
-    e_fact_sqrt = math.sqrt(e_fact)
+    e_fact_sqrt = sqrt(e_fact)
 
     M = m1 + m2
     M_fact_2 = M * M
     M_fact_4 = M_fact_2 * M_fact_2
 
-    cos_u = math.cos(u)
+    cos_u = cos(u)
 
     numerator = (
         # (m1 - m2)(m1 + m2)(...)
@@ -1932,10 +1932,10 @@ def phi_dot_3pn_SS(e: float, m1: float, m2: float, S1z: float, S2z: float, u: fl
     e_4 = e_2 * e_2
     e_6 = e_4 * e_2
     e_fact = 1.0 - e_2
-    e_fact_sqrt = math.sqrt(e_fact)
+    e_fact_sqrt = sqrt(e_fact)
     M_fact_2 = (m1 + m2) ** 2
     M_fact_4 = M_fact_2 * M_fact_2
-    cos_u = math.cos(u)
+    cos_u = cos(u)
     cos_u_2 = cos_u * cos_u
     cos_u_3 = cos_u_2 * cos_u
 
@@ -2359,7 +2359,7 @@ def rel_sep_3pn(e: float, u: float, eta: float) -> float:
                  + 464940.0 * pi_pow_2 + 17875620.0) * eta
                 - 417440.0
             ) * e
-        ) * math.cos(u)
+        ) * cos(u)
         + 116235.0 * pi_pow_2 * eta
         + 1814400.0
     )
@@ -2519,7 +2519,7 @@ def dx_dt(radiation_pn_order: int,
 
     x2 = x * x
     x3 = x2 * x
-    xsqx = x * math.sqrt(x)
+    xsqx = x * sqrt(x)
     x5 = x**5
 
     # -------------------------
@@ -2538,7 +2538,7 @@ def dx_dt(radiation_pn_order: int,
         inst += x_dot_2pn_SS(e, eta, m1, m2, S1z, S2z) * x2
 
     if radiation_pn_order >= 5:
-        inst += x_dot_2_5pn_SO(e, eta, m1, m2, S1z, S2z) * x2 * math.sqrt(x)
+        inst += x_dot_2_5pn_SO(e, eta, m1, m2, S1z, S2z) * x2 * sqrt(x)
 
     if radiation_pn_order >= 6:
         inst += x_dot_3pn(e, eta, x) * x3
@@ -2546,10 +2546,10 @@ def dx_dt(radiation_pn_order: int,
         inst += x_dot_3pn_SS(e, eta, m1, m2, S1z, S2z) * x3
 
     if radiation_pn_order >= 7:
-        inst += x_dot_3_5pnSO(e, eta, m1, m2, S1z, S2z) * x3 * math.sqrt(x)
-        inst += x_dot_3_5_pn(e, eta) * x3 * math.sqrt(x)
-        inst += x_dot_3_5pn_SS(e, eta, m1, m2, S1z, S2z) * x3 * math.sqrt(x)
-        inst += x_dot_3_5pn_cubicSpin(e, eta, m1, m2, S1z, S2z) * x3 * math.sqrt(x)
+        inst += x_dot_3_5pnSO(e, eta, m1, m2, S1z, S2z) * x3 * sqrt(x)
+        inst += x_dot_3_5_pn(e, eta) * x3 * sqrt(x)
+        inst += x_dot_3_5pn_SS(e, eta, m1, m2, S1z, S2z) * x3 * sqrt(x)
+        inst += x_dot_3_5pn_cubicSpin(e, eta, m1, m2, S1z, S2z) * x3 * sqrt(x)
     
     if radiation_pn_order >= 8:
         inst += (
@@ -2559,7 +2559,7 @@ def dx_dt(radiation_pn_order: int,
         ) * (x2 * x2)
 
     if radiation_pn_order >= 9:
-        inst += x_dot_4_5_pn(e, eta, x) * (x2 * x2) * math.sqrt(x)
+        inst += x_dot_4_5_pn(e, eta, x) * (x2 * x2) * sqrt(x)
 
     if radiation_pn_order >= 10:
         inst += 0.0 #dxdt_5pn(x, eta), not implemented
@@ -2720,7 +2720,7 @@ def mikkola_finder(eccentricity, mean_anomaly):
 
     # Mikkola Eq. (9b)
     # Using your existing pow1_3 function
-    z = pow1_3(b + sgn_b * math.sqrt(b * b + a * a * a))
+    z = pow1_3(b + sgn_b * sqrt(b * b + a * a * a))
     
     # Mikkola Eq. (9c)
     s = z - a / z
@@ -2776,10 +2776,10 @@ def pn_kepler_equation(eta, x, e, l):
 
     # iterate using Newton's method to get solution
     if e < 1.0:
-        newt_err = u - e * math.sin(u) - l
+        newt_err = u - e * sin(u) - l
         while abs(newt_err) > newt_thresh:
-            u -= newt_err / (1.0 - e * math.cos(u))
-            newt_err = u - e * math.sin(u) - l
+            u -= newt_err / (1.0 - e * cos(u))
+            newt_err = u - e * sin(u) - l
             
     return -u if mean_anom_negative else u
 
@@ -2817,7 +2817,7 @@ def eccentric_x_model_odes(t, y, params):
         dydt[0] = dx_dt(radiation_pn_order, eta, m1, m2, S1z, S2z, x, e)
         dydt[1] = de_dt(radiation_pn_order, eta, m1, m2, S1z, S2z, x, e)
         dydt[2] = dl_dt(eta, m1, m2, S1z, S2z, x, e)
-        dydt[3] = x * math.sqrt(x)
+        dydt[3] = x * sqrt(x)
 
     # Check for NaN (equivalent to XLAL_REAL8_FAIL_NAN)
     if math.isnan(dydt[0]) or math.isnan(dydt[1]):
