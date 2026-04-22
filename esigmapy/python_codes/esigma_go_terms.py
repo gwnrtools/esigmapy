@@ -573,7 +573,7 @@ def hGO_2_m_2(mass: float, Nu: float, r: float, rDOT: float,
     else:
         return complex(0, 0)
     
-# hQC_l_m() functions contains only the non-spinning hereditary terms at
+# hQC_l_m() functions contain only the non-spinning hereditary terms at
 # particular PN order.
 
 def hQC_2_m_2(mass: float, Nu: float, vpnorder: int, x: float, S1z: float, S2z: float,
@@ -2540,6 +2540,558 @@ def hGO_3_m_1(
     else:
         return 0.0 + 0.0j
     
+def hQC_3_m_1(
+                mass: float, 
+                Nu: float, 
+                vpnorder: int, 
+                x: float, 
+                S1z: float, 
+                S2z: float, 
+                params: KeplerVars
+            ) -> complex:
+    
+    delta: float = np.sqrt(1.0 - 4.0 * Nu)
+    EulerGamma: float = 0.5772156649015329
+    b0: float = 2.0 * mass / np.exp(0.5)
+    r0: float = b0
 
+    if vpnorder == 4:
+        return (
+            -0.005555555555555556 * (
+                delta * params.x3 * (
+                    -97.0 + 60.0 * EulerGamma - 30.0j * np.pi + 
+                    60.0 * np.log(2.0) + 60.0 * np.log(b0) + 90.0 * np.log(x)
+                )
+            ) / np.sqrt(14.0)
+        )
 
+    elif vpnorder == 6:
+        return (
+            (delta * params.x4 * (
+                -1552.0 + 960.0 * EulerGamma - 6487.0 * Nu + 420.0 * EulerGamma * Nu - 
+                480.0j * np.pi - 210.0j * Nu * np.pi + 960.0 * np.log(2.0) + 
+                420.0 * Nu * np.log(2.0) + 60.0 * (16.0 + 7.0 * Nu) * np.log(b0) + 
+                90.0 * (16.0 + 7.0 * Nu) * np.log(x)
+            )) / (1080.0 * np.sqrt(14.0))
+        )
+
+    elif vpnorder == 7:
+        numerator_7 = (
+            -9.44822373393802e-6 * (
+                params.x4p5 * (
+                    53132.0j * delta - 92232.0j * delta * EulerGamma + 35280.0j * delta * EulerGamma**2 - 
+                    46116.0 * delta * np.pi + 35280.0 * delta * EulerGamma * np.pi - 2940.0j * delta * np.pi**2 + 
+                    57036.0 * S1z + 57036.0 * delta * S1z - 35280.0 * EulerGamma * S1z - 35280.0 * delta * EulerGamma * S1z - 
+                    114513.0 * Nu * S1z - 143031.0 * delta * Nu * S1z + 97020.0 * EulerGamma * Nu * S1z + 
+                    114660.0 * delta * EulerGamma * Nu * S1z + 17640.0j * np.pi * S1z + 17640.0j * delta * np.pi * S1z - 
+                    48510.0j * Nu * np.pi * S1z - 57330.0j * delta * Nu * np.pi * S1z - 57036.0 * S2z + 
+                    57036.0 * delta * S2z + 35280.0 * EulerGamma * S2z - 35280.0 * delta * EulerGamma * S2z + 
+                    114513.0 * Nu * S2z - 143031.0 * delta * Nu * S2z - 97020.0 * EulerGamma * Nu * S2z + 
+                    114660.0 * delta * EulerGamma * Nu * S2z - 17640.0j * np.pi * S2z + 17640.0j * delta * np.pi * S2z + 
+                    48510.0j * Nu * np.pi * S2z - 57330.0j * delta * Nu * np.pi * S2z - 92232.0j * delta * np.log(2.0) + 
+                    70560.0j * delta * EulerGamma * np.log(2.0) + 35280.0 * delta * np.pi * np.log(2.0) - 
+                    35280.0 * S1z * np.log(2.0) - 35280.0 * delta * S1z * np.log(2.0) + 97020.0 * Nu * S1z * np.log(2.0) + 
+                    114660.0 * delta * Nu * S1z * np.log(2.0) + 35280.0 * S2z * np.log(2.0) - 35280.0 * delta * S2z * np.log(2.0) - 
+                    97020.0 * Nu * S2z * np.log(2.0) + 114660.0 * delta * Nu * S2z * np.log(2.0) + 
+                    35280.0j * delta * np.log(2.0)**2 - 2490264.0j * delta * np.log(3.0) + 
+                    1905120.0j * delta * EulerGamma * np.log(3.0) + 952560.0 * delta * np.pi * np.log(3.0) - 
+                    317520.0 * S1z * np.log(3.0) - 317520.0 * delta * S1z * np.log(3.0) + 1508220.0 * Nu * S1z * np.log(3.0) + 
+                    396900.0 * delta * Nu * S1z * np.log(3.0) + 317520.0 * S2z * np.log(3.0) - 317520.0 * delta * S2z * np.log(3.0) - 
+                    1508220.0 * Nu * S2z * np.log(3.0) + 396900.0 * delta * Nu * S2z * np.log(3.0) + 
+                    1905120.0j * delta * np.log(2.0) * np.log(3.0) + 952560.0j * delta * np.log(3.0)**2 + 
+                    35280.0j * delta * np.log(b0)**2 + 21840.0j * delta * np.log(r0) - 138348.0j * delta * np.log(x) + 
+                    105840.0j * delta * EulerGamma * np.log(x) + 52920.0 * delta * np.pi * np.log(x) - 52920.0 * S1z * np.log(x) - 
+                    52920.0 * delta * S1z * np.log(x) + 145530.0 * Nu * S1z * np.log(x) + 171990.0 * delta * Nu * S1z * np.log(x) + 
+                    52920.0 * S2z * np.log(x) - 52920.0 * delta * S2z * np.log(x) - 145530.0 * Nu * S2z * np.log(x) + 
+                    171990.0 * delta * Nu * S2z * np.log(x) + 105840.0j * delta * np.log(2.0) * np.log(x) + 
+                    79380.0j * delta * np.log(x)**2 + 
+                    588.0 * np.log(b0) * (
+                        -194.0j * delta + 120.0j * delta * EulerGamma + 60.0 * delta * np.pi + 
+                        15.0 * (-4.0 - 4.0 * delta + 11.0 * Nu + 13.0 * delta * Nu) * S1z + 
+                        60.0 * S2z - 60.0 * delta * S2z - 165.0 * Nu * S2z + 195.0 * delta * Nu * S2z + 
+                        120.0j * delta * np.log(2.0) + 180.0j * delta * np.log(x)
+                    )
+                )
+            )
+        )
+        return numerator_7 / np.sqrt(14.0)
+
+    else:
+        return 0.0 + 0.0j
+
+def hl_3_m_1(
+                mass: float, 
+                Nu: float, 
+                r: float, 
+                rDOT: float, 
+                Phi: float, 
+                PhiDOT: float, 
+                R: float, 
+                vpnorder: int, 
+                S1z: float, 
+                S2z: float, 
+                x: float, 
+                params: KeplerVars
+            ) -> complex:
+
+    if vpnorder > 8:
+        # Maintaining the logic of the C-source error check
+        raise ValueError(
+            "Error in hl_3_m_1: Input PN order parameter should be between [0, 8]."
+        )
+
+    # Pre-factor: (4 * M * Nu * sqrt(pi/5)) / R
+    pre_factor: float = (4.0 * mass * Nu * np.sqrt(np.pi / 5.0)) / R
+
+    # Evaluate the General Orbit (GO) and Quasi-Circular (QC) components
+    # Assuming hGO_3_m_1 and hQC_3_m_1 are already translated in your module
+    go_component: complex = hGO_3_m_1(
+        mass, Nu, r, rDOT, PhiDOT, vpnorder, S1z, S2z, x, params
+    )
+    qc_component: complex = hQC_3_m_1(
+        mass, Nu, vpnorder, x, S1z, S2z, params
+    )
+
+    # cpolar(1, -1 * Phi) -> exp(-i * Phi)
+    phase_factor: complex = np.exp(-1j * Phi)
+
+    return pre_factor * (go_component + qc_component) * phase_factor
+
+def hl_3_m_min1(
+                mass: float, 
+                Nu: float, 
+                r: float, 
+                rDOT: float, 
+                Phi: float, 
+                PhiDOT: float, 
+                R: float, 
+                vpnorder: int, 
+                S1z: float, 
+                S2z: float, 
+                x: float, 
+                params: KeplerVars
+            ) -> complex:
+
+    if vpnorder > 8:
+        # Maintaining the logic of the C-source error check
+        raise ValueError(
+            "Error in hl_3_m_1: Input PN order parameter should be between [0, 8]."
+        )
+
+    # Pre-factor: (4 * M * Nu * sqrt(pi/5)) / R
+    pre_factor: float = (4.0 * mass * Nu * np.sqrt(np.pi / 5.0)) / R
+
+    # Evaluate the General Orbit (GO) and Quasi-Circular (QC) components
+    # Assuming hGO_3_m_1 and hQC_3_m_1 are already translated in your module
+    go_component: complex = hGO_3_m_1(
+        mass, Nu, r, rDOT, PhiDOT, vpnorder, S1z, S2z, x, params
+    )
+    qc_component: complex = hQC_3_m_1(
+        mass, Nu, vpnorder, x, S1z, S2z, params
+    )
+    amplitude_factor = (go_component + qc_component).conjugate()
+
+    # cpolar(1, 1 * Phi) -> exp(i * Phi)
+    phase_factor: complex = np.exp(1j * Phi)
+
+    return pre_factor * amplitude_factor * phase_factor
+
+# H44
+
+def hGO_4_m_4(
+                mass: float,
+                Nu: float,
+                r: float,
+                rDOT: float,
+                PhiDOT: float,
+                vpnorder: int,
+                S1z: float,
+                S2z: float,
+                params: KeplerVars,
+            ) -> complex:
+    delta = np.sqrt((1 - 4 * Nu) + 0j)
+    kappa1 = 1.0
+    kappa2 = 1.0
+
+    combination_a  = PhiDOT * r + 1j * rDOT
+    combination_a4 = combination_a ** 4
+    combination_a5 = combination_a ** 5
+    combination_a6 = combination_a ** 6
+
+    combination_b  = PhiDOT * r - 1j * rDOT
+    combination_b2 = combination_b ** 2
+
+    if vpnorder == 2:
+        return (
+            np.sqrt(0.7142857142857143) * (-1 + 3 * Nu) *
+            (7 * params.Mtot2 + 6 * params.r2 * combination_a4 +
+             3 * mass * r *
+             (17 * params.PhiDOT2 * params.r2 +
+              18j * PhiDOT * r * rDOT - 6 * params.rDOT2))
+            / (36.0 * params.r2)
+        )
+
+    elif vpnorder == 4:
+        return (
+            (40 * params.Mtot3 * (314 - 987 * Nu + 195 * params.eta2) -
+             60 * (23 - 159 * Nu + 291 * params.eta2) * params.r3 *
+             combination_b * combination_a5 +
+             params.Mtot2 * r *
+             ((53143 - 199660 * Nu + 127500 * params.eta2) * params.PhiDOT2 * params.r2 +
+              24j * (967 - 4615 * Nu + 5935 * params.eta2) * PhiDOT * r * rDOT -
+              10 * (290 - 2033 * Nu + 4365 * params.eta2) * params.rDOT2) -
+             3 * mass * params.r2 *
+             ((613 - 920 * Nu + 6420 * params.eta2) * params.PhiDOT4 * params.r4 -
+              8j * (-976 + 1745 * Nu + 3150 * params.eta2) * params.PhiDOT3 * params.r3 * rDOT +
+              2 * (-6141 + 8980 * Nu + 31500 * params.eta2) * params.PhiDOT2 * params.r2 * params.rDOT2 +
+              4j * (-1853 + 1730 * Nu + 13230 * params.eta2) * PhiDOT * r * params.rDOT3 -
+              20 * (-83 + 30 * Nu + 762 * params.eta2) * params.rDOT4))
+            / (1584.0 * np.sqrt(35) * params.r3)
+        )
+
+    elif vpnorder == 5:
+        term1 = (
+            params.Mtot2 * Nu *
+            (6 * mass * (-43j * PhiDOT * r + 9 * rDOT) +
+             r * (-734j * params.PhiDOT3 * params.r3 +
+                  129 * params.PhiDOT2 * params.r2 * rDOT +
+                  156j * PhiDOT * r * params.rDOT2 -
+                  26 * params.rDOT3))
+            / (24.0 * np.sqrt(35) * params.r3)
+        )
+
+        # Henry et al. ecc spin terms
+        term2 = (
+            params.Mtot2 *
+            (-3j * params.PhiDOT2 * params.r3 * rDOT *
+             ((-250 + 1221 * Nu - 1512 * params.eta2 +
+               delta * (-250 + 849 * Nu)) * S1z +
+              (-250 + delta * (250 - 849 * Nu) + 1221 * Nu -
+               1512 * params.eta2) * S2z) -
+             2 * mass * PhiDOT * r *
+             ((-130 + 757 * Nu - 1224 * params.eta2 +
+               delta * (-130 + 513 * Nu)) * S1z +
+              (-130 + delta * (130 - 513 * Nu) + 757 * Nu -
+               1224 * params.eta2) * S2z) -
+             2j * mass * rDOT *
+             ((-100 + 577 * Nu - 864 * params.eta2 +
+               delta * (-100 + 333 * Nu)) * S1z +
+              (-100 + delta * (100 - 333 * Nu) + 577 * Nu -
+               864 * params.eta2) * S2z) -
+             6 * params.PhiDOT3 * params.r4 *
+             ((-65 + 263 * Nu - 291 * params.eta2 +
+               delta * (-65 + 282 * Nu)) * S1z +
+              (-65 + delta * (65 - 282 * Nu) + 263 * Nu -
+               291 * params.eta2) * S2z) +
+             12 * PhiDOT * params.r2 * params.rDOT2 *
+             ((-40 + 201 * Nu - 252 * params.eta2 +
+               delta * (-40 + 129 * Nu)) * S1z +
+              (-40 + delta * (40 - 129 * Nu) + 201 * Nu -
+               252 * params.eta2) * S2z) +
+             6j * r * params.rDOT3 *
+             ((-20 + 107 * Nu - 144 * params.eta2 +
+               delta * (-20 + 63 * Nu)) * S1z +
+              (-20 + delta * (20 - 63 * Nu) + 107 * Nu -
+               144 * params.eta2) * S2z))
+            / (72.0 * np.sqrt(35) * params.r3)
+        )
+
+        return term1 + term2
+
+    elif vpnorder == 6:
+        term1 = (
+            (10 * params.Mtot4 *
+             (-4477296 + 12734393 * Nu - 6895 * params.eta2 + 1043805 * params.eta3) +
+             3150 * (-367 + 4337 * Nu - 17462 * params.eta2 + 23577 * params.eta3) *
+             params.r4 * combination_b2 * combination_a6 +
+             2 * params.Mtot3 * r *
+             ((-36967579 + 245501977 * Nu - 459916170 * params.eta2 +
+               150200680 * params.eta3) * params.PhiDOT2 * params.r2 +
+              4j * (7571073 - 10780154 * Nu - 56898800 * params.eta2 +
+                    43665510 * params.eta3) * PhiDOT * r * rDOT -
+              10 * (1283609 - 5800627 * Nu + 3725295 * params.eta2 +
+                    4771935 * params.eta3) * params.rDOT2) -
+             params.Mtot2 * params.r2 *
+             ((-28258134 + 3245207 * Nu + 144051250 * params.eta2 +
+               136991820 * params.eta3) * params.PhiDOT4 * params.r4 -
+              24j * (2371982 - 7733376 * Nu - 7948185 * params.eta2 +
+                     9074870 * params.eta3) * params.PhiDOT3 * params.r3 * rDOT +
+              7 * (6557973 - 50558069 * Nu + 59901380 * params.eta2 +
+                   104752320 * params.eta3) * params.PhiDOT2 * params.r2 * params.rDOT2 +
+              168j * (52044 - 1084807 * Nu + 1849450 * params.eta2 +
+                      4171730 * params.eta3) * PhiDOT * r * params.rDOT3 -
+              35 * (1083 - 1246819 * Nu + 2524240 * params.eta2 +
+                    5995845 * params.eta3) * params.rDOT4) -
+             105 * mass * params.r3 *
+             ((116396 - 551405 * Nu + 560658 * params.eta2 +
+               293036 * params.eta3) * params.PhiDOT6 * params.r6 +
+              2j * (158192 - 670661 * Nu + 177718 * params.eta2 +
+                    2163976 * params.eta3) * params.PhiDOT5 * params.r5 * rDOT +
+              (-393665 + 1322392 * Nu + 1589680 * params.eta2 -
+               8622660 * params.eta3) * params.PhiDOT4 * params.r4 * params.rDOT2 -
+              8j * (-23048 + 209397 * Nu - 487057 * params.eta2 +
+                    260396 * params.eta3) * params.PhiDOT3 * params.r3 * params.rDOT3 -
+              (630647 - 3391000 * Nu + 2501958 * params.eta2 +
+               7664096 * params.eta3) * params.PhiDOT2 * params.r2 * params.rDOT4 -
+              2j * (218975 - 1037408 * Nu + 148970 * params.eta2 +
+                    3699480 * params.eta3) * PhiDOT * r * params.rDOT5 +
+              10 * (10233 - 44864 * Nu - 13050 * params.eta2 +
+                    203280 * params.eta3) * params.rDOT6))
+            / (1.44144e6 * np.sqrt(35) * params.r4)
+        )
+
+        # Henry et al. ecc spin terms
+        term2 = (
+            np.sqrt(0.7142857142857143) * params.Mtot3 * (-1 + 3 * Nu) *
+            (12 * mass +
+             r * (53 * params.PhiDOT2 * params.r2 +
+                  26j * PhiDOT * r * rDOT - 8 * params.rDOT2)) *
+            (kappa1 * (1 + delta - 2 * Nu) * params.S1z2 +
+             S2z * (4 * Nu * S1z + kappa2 * S2z - delta * kappa2 * S2z -
+                    2 * kappa2 * Nu * S2z))
+            / (48.0 * params.r4)
+        )
+
+        return term1 + term2
+
+    elif vpnorder == 7:
+        # Henry et al. ecc+spin terms
+        return (
+            params.Mtot2 *
+            (14 * params.Mtot2 *
+             (120 * params.eta3 *
+              (24635 * PhiDOT * r + 18657j * rDOT) *
+              (S1z + S2z) -
+              60 * (10039 * PhiDOT * r + 7706j * rDOT) *
+              (S1z + delta * S1z + S2z - delta * S2z) +
+              5 * Nu *
+              (PhiDOT * r *
+               (448616j + 703833 * S1z + 505635 * delta * S1z +
+                703833 * S2z - 505635 * delta * S2z) +
+               4j * rDOT *
+               (4175j + 123114 * S1z + 76938 * delta * S1z +
+                123114 * S2z - 76938 * delta * S2z)) -
+              6 * params.eta2 *
+              (2 * PhiDOT * r *
+               (217374j + 549175 * S1z + 61075 * delta * S1z +
+                549175 * S2z - 61075 * delta * S2z) +
+               5j * rDOT *
+               (9861j + 132241 * S1z + 18825 * delta * S1z +
+                132241 * S2z - 18825 * delta * S2z))) -
+             3 * params.r2 *
+             (1680 * params.eta3 *
+              (2833 * params.PhiDOT5 * params.r5 +
+               18796j * params.PhiDOT4 * params.r4 * rDOT -
+               13185 * params.PhiDOT3 * params.r3 * params.rDOT2 +
+               1186j * params.PhiDOT2 * params.r2 * params.rDOT3 -
+               5863 * PhiDOT * r * params.rDOT4 -
+               2100j * params.rDOT5) *
+              (S1z + S2z) -
+              1050 *
+              (454 * params.PhiDOT5 * params.r5 +
+               1195j * params.PhiDOT4 * params.r4 * rDOT -
+               1950 * params.PhiDOT3 * params.r3 * params.rDOT2 -
+               442j * params.PhiDOT2 * params.r2 * params.rDOT3 -
+               384 * PhiDOT * r * params.rDOT4 -
+               184j * params.rDOT5) *
+              (S1z + delta * S1z + S2z - delta * S2z) -
+              6 * params.eta2 *
+              (2 * params.PhiDOT5 * params.r5 *
+               (-2459811j + 35 * (26517 + 10223 * delta) * S1z +
+                (928095 - 357805 * delta) * S2z) -
+               10j * params.rDOT5 *
+               (35291j + 28 * (2183 + 1155 * delta) * S1z +
+                (61124 - 32340 * delta) * S2z) +
+               1j * params.PhiDOT2 * params.r2 * params.rDOT3 *
+               (917901j + 1120 * (-191 + 1616 * delta) * S1z -
+                1120 * (191 + 1616 * delta) * S2z) +
+               5 * params.PhiDOT3 * params.r3 * params.rDOT2 *
+               (85426j + 7 * (-148363 + 4365 * delta) * S1z -
+                7 * (148363 + 4365 * delta) * S2z) -
+               4 * PhiDOT * r * params.rDOT4 *
+               (280067j + 70 * (5844 + 4817 * delta) * S1z -
+                70 * (-5844 + 4817 * delta) * S2z) +
+               1j * params.PhiDOT4 * params.r4 * rDOT *
+               (10375501j + 70 * (65831 + 22871 * delta) * S1z -
+                70 * (-65831 + 22871 * delta) * S2z)) +
+              Nu * (-40j * params.rDOT5 *
+                    (12203j + 42 * (843 + 656 * delta) * S1z -
+                     42 * (-843 + 656 * delta) * S2z) +
+                    4j * params.PhiDOT2 * params.r2 * params.rDOT3 *
+                    (-266071j + 210 * (-2279 + 1010 * delta) * S1z -
+                     210 * (2279 + 1010 * delta) * S2z) -
+                    16 * PhiDOT * r * params.rDOT4 *
+                    (58753j + 105 * (2030 + 1947 * delta) * S1z -
+                     105 * (-2030 + 1947 * delta) * S2z) +
+                    params.PhiDOT5 * params.r5 *
+                    (-8997592j + 105 * (39959 + 15835 * delta) * S1z -
+                     105 * (-39959 + 15835 * delta) * S2z) -
+                    10 * params.PhiDOT3 * params.r3 * params.rDOT2 *
+                    (254228j + 21 * (65293 + 34551 * delta) * S1z -
+                     21 * (-65293 + 34551 * delta) * S2z) +
+                    2j * params.PhiDOT4 * params.r4 * rDOT *
+                    (12351083j + 105 * (43193 + 37913 * delta) * S1z -
+                     105 * (-43193 + 37913 * delta) * S2z))) +
+             mass * r *
+             (2520 * params.eta3 *
+              (8036 * params.PhiDOT3 * params.r3 +
+               41814j * params.PhiDOT2 * params.r2 * rDOT -
+               30537 * PhiDOT * r * params.rDOT2 -
+               9064j * params.rDOT3) *
+              (S1z + S2z) -
+              210 *
+              (11849 * params.PhiDOT3 * params.r3 +
+               31868j * params.PhiDOT2 * params.r2 * rDOT +
+               3572 * PhiDOT * r * params.rDOT2 +
+               1508j * params.rDOT3) *
+              (S1z + delta * S1z + S2z - delta * S2z) -
+              12 * params.eta2 *
+              (1j * params.PhiDOT2 * params.r2 * rDOT *
+               (-1150397j + 35 * (154765 + 157449 * delta) * S1z +
+                5416775 * S2z - 5510715 * delta * S2z) -
+               PhiDOT * r * params.rDOT2 *
+               (2306552j + 35 * (4931 + 110733 * delta) * S1z +
+                172585 * S2z - 3875655 * delta * S2z) +
+               params.PhiDOT3 * params.r3 *
+               (12461121j + 35 * (18331 + 87381 * delta) * S1z +
+                641585 * S2z - 3058335 * delta * S2z) -
+               25j * params.rDOT3 *
+               (36676j + 35 * (137 + 1053 * delta) * S1z +
+                4795 * S2z - 36855 * delta * S2z)) +
+              Nu * (-200j * params.rDOT3 *
+                    (-2501j + 42 * (-308 + 51 * delta) * S1z -
+                     42 * (308 + 51 * delta) * S2z) +
+                    2 * PhiDOT * r * params.rDOT2 *
+                    (-1951984j - 105 * (-37907 + 14661 * delta) * S1z +
+                     105 * (37907 + 14661 * delta) * S2z) +
+                    8j * params.PhiDOT2 * params.r2 * rDOT *
+                    (-10005028j + 105 * (40991 + 31689 * delta) * S1z -
+                     105 * (-40991 + 31689 * delta) * S2z) +
+                    params.PhiDOT3 * params.r3 *
+                    (88418488j + 105 * (57793 + 266391 * delta) * S1z -
+                     105 * (-57793 + 266391 * delta) * S2z))))
+            / (332640.0 * np.sqrt(35) * params.r4)
+        )
+
+    else:
+        return 0.0 + 0.0j
+    
+def hQC_4_m_4(
+                mass: float, 
+                Nu: float, 
+                vpnorder: int, 
+                x: float, 
+                S1z: float, 
+                S2z: float, 
+                params: KeplerVars
+            ) -> complex:
+    EulerGamma: float = 0.5772156649015329
+    b0: float = 2.0 * mass / np.exp(0.5)
+
+    if vpnorder == 5:
+        # Pre-factor: Complex(0, 0.07407407407407407) / sqrt(35)
+        return (
+            (0.07407407407407407j * params.x3p5 * (
+                1888.0 - 960.0 * EulerGamma - 5661.0 * Nu + 2880.0 * EulerGamma * Nu + 
+                480.0j * np.pi - 1440.0j * Nu * np.pi - 2880.0 * np.log(2.0) + 
+                8640.0 * Nu * np.log(2.0) + 960.0 * (-1.0 + 3.0 * Nu) * np.log(b0) + 
+                1440.0 * (-1.0 + 3.0 * Nu) * np.log(x)
+            )) / np.sqrt(35.0)
+        )
+
+    elif vpnorder == 7:
+        # Pre-factor: Complex(0, 1.0020843354176687e-6) / sqrt(35)
+        return (
+            (1.0020843354176687e-6j * params.x4p5 * (
+                -752360448.0 + 382556160.0 * EulerGamma + 2620364605.0 * Nu - 
+                1333248000.0 * EulerGamma * Nu - 898312500.0 * params.eta2 + 
+                458035200.0 * EulerGamma * params.eta2 - 191278080.0j * np.pi + 
+                666624000.0j * Nu * np.pi - 229017600.0j * params.eta2 * np.pi + 
+                1147668480.0 * np.log(2.0) - 3999744000.0 * Nu * np.log(2.0) + 
+                1374105600.0 * params.eta2 * np.log(2.0) + 
+                215040.0 * (1779.0 - 6200.0 * Nu + 2130.0 * params.eta2) * np.log(b0) + 
+                322560.0 * (1779.0 - 6200.0 * Nu + 2130.0 * params.eta2) * np.log(x)
+            )) / np.sqrt(35.0)
+        )
+
+    else:
+        return 0.0 + 0.0j
+    
+def hl_4_m_4(
+                mass: float, 
+                Nu: float, 
+                r: float, 
+                rDOT: float, 
+                Phi: float, 
+                PhiDOT: float, 
+                R: float, 
+                vpnorder: int, 
+                S1z: float, 
+                S2z: float, 
+                x: float, 
+                params: KeplerVars
+            ) -> complex:
+
+    if vpnorder > 8:
+        raise ValueError(
+            "Error in hl_4_m_4: Input PN order parameter should be between [0, 8]."
+        )
+
+    # Pre-factor: (4 * M * Nu * sqrt(pi/5)) / R
+    pre_factor: float = (4.0 * mass * Nu * np.sqrt(np.pi / 5.0)) / R
+
+    # Evaluate the General Orbit (GO) and Quasi-Circular (QC) components
+    # hGO_4_m_4 and hQC_4_m_4 are assuming your existing structure
+    go_component: complex = hGO_4_m_4(
+        mass, Nu, r, rDOT, PhiDOT, vpnorder, S1z, S2z, params
+    )
+    qc_component: complex = hQC_4_m_4(
+        mass, Nu, vpnorder, x, S1z, S2z, params
+    )
+
+    # cpolar(1, -4 * Phi) -> exp(-i * 4 * Phi)
+    phase_factor: complex = np.exp(-4j * Phi)
+
+    return pre_factor * (go_component + qc_component) * phase_factor
+
+def hl_4_m_min4(
+                mass: float, 
+                Nu: float, 
+                r: float, 
+                rDOT: float, 
+                Phi: float, 
+                PhiDOT: float, 
+                R: float, 
+                vpnorder: int, 
+                S1z: float, 
+                S2z: float, 
+                x: float, 
+                params: KeplerVars
+            ) -> complex:
+
+    if vpnorder > 8:
+        raise ValueError(
+            "Error in hl_4_m_4: Input PN order parameter should be between [0, 8]."
+        )
+
+    # Pre-factor: (4 * M * Nu * sqrt(pi/5)) / R
+    pre_factor: float = (4.0 * mass * Nu * np.sqrt(np.pi / 5.0)) / R
+
+    # Evaluate the General Orbit (GO) and Quasi-Circular (QC) components
+    # hGO_4_m_4 and hQC_4_m_4 are assuming your existing structure
+    go_component: complex = hGO_4_m_4(
+        mass, Nu, r, rDOT, PhiDOT, vpnorder, S1z, S2z, params
+    )
+    qc_component: complex = hQC_4_m_4(
+        mass, Nu, vpnorder, x, S1z, S2z, params
+    )
+
+    amplitude_factor = (go_component + qc_component).conjugate()
+
+    # cpolar(1, 4 * Phi) -> exp(i * 4 * Phi)
+    phase_factor: complex = np.exp(4j * Phi)
+
+    return pre_factor * amplitude_factor * phase_factor
+
+# H43
 
