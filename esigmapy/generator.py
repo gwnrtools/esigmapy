@@ -11,6 +11,7 @@ import lal
 import lalsimulation as ls
 import pycbc.types as pt
 from .utils import f_ISCO_spin
+from .condition import apply_taper_both_pols
 
 ECCENTRICITY_LEVEL_ISCO_WARNING = 0.02
 ECCENTRICITY_LEVEL_ISCO_ERROR = 0.1
@@ -117,7 +118,7 @@ def eccentricity_at_reference_frequency(
     """ """
     itime = time.perf_counter()
     retval = ls.SimInspiralENIGMADynamics(
-        mass1, mass2, spin1z, spin2z, e0, f_lower, l0, 1e-12, sample_rate, False
+        mass1, mass2, spin1z, spin2z, e0, f_lower, l0, 1e-12, sample_rate
     )
     t, x, e, l, phi, phidot, r, rdot = retval[:8]
     t.data.data *= lal.MTSUN_SI
@@ -216,6 +217,7 @@ def get_inspiral_esigma_modes(
     # Calculating the orbital variables, depending on user input.
     # Use of `f_ref` is activated
     f_start = f_lower
+    itime = time.perf_counter()
     if f_ref is None:
         f_start = f_lower
         f_ref = f_lower
@@ -253,7 +255,6 @@ def get_inspiral_esigma_modes(
         mean_anomaly,
         1e-12,
         1 / delta_t,
-        False,
     )
 
     if f_ref < f_lower:
@@ -352,6 +353,7 @@ def get_inspiral_esigma_waveform(
     return_orbital_params=False,
     return_pycbc_timeseries=True,
     verbose=False,
+    condition=0,
     **kwargs,
 ):
     """
@@ -380,6 +382,9 @@ def get_inspiral_esigma_waveform(
         return_pycbc_timeseries -- If True, returns data in the form of PyCBC timeseries.
                                    True by default
         verbose                 -- Verbosity level. Available values are: 0, 1, 2
+        condition                 -- If 1, applies a tapering to the start of the
+                                    waveform to mitigate any potential startup transients.
+                                    Default is 0 (no tapering).
 
     Returns:
     --------
@@ -421,8 +426,10 @@ def get_inspiral_esigma_waveform(
     )
 
     if return_pycbc_timeseries:
-        hp = pt.TimeSeries(hp, delta_t=delta_t, epoch=-delta_t * (len(hp) - 1))
-        hc = pt.TimeSeries(hc, delta_t=delta_t, epoch=-delta_t * (len(hc) - 1))
+        hp = pt.TimeSeries(hp, delta_t=delta_t, epoch=-delta_t * (len(hp)-1))
+        hc = pt.TimeSeries(hc, delta_t=delta_t, epoch=-delta_t * (len(hc)-1))
+        if condition == 1:
+            hp, hc, _ = apply_taper_both_pols(hp, hc, method='cycles', n_cycles=1,verbose=verbose)
 
     if return_orbital_params:
         if return_pycbc_timeseries:
@@ -794,7 +801,7 @@ def get_imr_esigma_modes(
             print(
                 f"""Warning: You requested the following list of orbital
 parameters to be returned: {return_orbital_params}, but we reduce it to
-{return_orbital_params_user} as we only have the evolution of the following 
+{return_orbital_params_user} as we only have the evolution of the following
 parameters available with us: {available_inspiral_orbital_params}.
                   """
             )
@@ -853,7 +860,7 @@ parameters available with us: {available_inspiral_orbital_params}.
     modes_inspiral_numpy = retval[-1]
     if mode_to_align_by not in modes_inspiral_numpy:
         raise RuntimeError(
-            f"""The inspiral modes do not contain the primary 
+            f"""The inspiral modes do not contain the primary
 desired {mode_to_align_by} multipole. It currently holds only the following:
 {modes_inspiral_numpy.keys()}"""
         )
@@ -1081,6 +1088,7 @@ def get_imr_esigma_waveform(
     return_orbital_params=False,
     failsafe=True,
     verbose=False,
+    condition=0,
     **kwargs,
 ):
     """
@@ -1148,6 +1156,9 @@ def get_imr_esigma_waveform(
                                      user, if the inputs to this method lead
                                      into exceptions.
         verbose                   -- Verbosity level. Available values are: 0, 1, 2
+        condition                 -- If 1, applies a tapering to the start of the
+                                    waveform to mitigate any potential startup transients.
+                                    Default is 0 (no tapering).
 
     Returns:
     --------
@@ -1200,7 +1211,8 @@ def get_imr_esigma_waveform(
         coa_phase=np.pi / 2 - coa_phase,
         verbose=verbose,
     )
-
+    if condition == 1:
+        hp, hc, _ = apply_taper_both_pols(hp, hc, method='cycles', n_cycles=1,verbose=verbose)
     if return_hybridization_info and return_orbital_params:
         return hp, hc, orbital_vars_dict, retval
     elif return_hybridization_info:
