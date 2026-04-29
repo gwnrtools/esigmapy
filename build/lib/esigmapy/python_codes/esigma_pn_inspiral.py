@@ -295,7 +295,7 @@ def x_dot_hereditary_1_5(e: float, eta: float, x: float) -> float:
 
 ## --------- 2PN terms ------------
 
-def x_dot_2pn(e: float, eta: float, x: float) -> float:
+def x_dot_2pn(e: float, eta: float) -> float:
     """Eq. (A29)"""
 
     e2 = e * e

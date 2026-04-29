@@ -2,7 +2,7 @@
 #
 """Functions specific to generating ESIGMA waveforms"""
 
-from __future__ import absolute_import
+# from __future__ import absolute_import
 
 import numpy as np
 import time
@@ -10,13 +10,14 @@ import esigmapy
 import lal
 import lalsimulation as ls
 import pycbc.types as pt
-from .utils import f_ISCO_spin
+from ..utils import f_ISCO_spin
+from .esigma_pn_main import *
 
 ECCENTRICITY_LEVEL_ISCO_WARNING = 0.02
 ECCENTRICITY_LEVEL_ISCO_ERROR = 0.1
 
 
-def eccentricity_at_extremum_frequency(
+def eccentricity_at_extremum_frequency_py(
     mass1,
     mass2,
     spin1z,
@@ -38,16 +39,26 @@ def eccentricity_at_extremum_frequency(
         return x[abs(y - y0).argmin()]
 
     itime = time.perf_counter()
-    retval = ls.SimInspiralESIGMADynamics(
-        mass1, mass2, spin1z, spin2z, e0, f_lower, l0, 1e-12, sample_rate, 
+    retval = inspiral_esigma_dynamics(
+        mass1, mass2, spin1z, spin2z, e0, f_lower, l0, 1e-12, sample_rate,
     )
-    t, x, e, l, phi, phidot, r, rdot = retval[:8]
-    t.data.data *= lal.MTSUN_SI
+    # t, x, e, l, phi, phidot, r, rdot = retval[:8]
+
+    t = np.asarray(retval["time_evol"])
+    x = np.asarray(retval["x_evol"])
+    e = np.asarray(retval["eccentricity_evol"])
+    l = np.asarray(retval["mean_ano_evol"])
+    phi = np.asarray(retval["phi_evol"])
+    phidot = np.asarray(retval["phi_dot_evol"])
+    r = np.asarray(retval["r_evol"])
+    rdot = np.asarray(retval["r_dot_evol"])
+
+    t *= lal.MTSUN_SI
 
     if verbose:
         print(f"Orbital evolution took: {time.perf_counter() - itime} seconds")
 
-    omega = pt.TimeSeries(phidot.data.data, delta_t=t.data.data[1] - t.data.data[0])
+    omega = pt.TimeSeries(phidot, delta_t=t[1] - t[0])
     if extremum == "periastron":
         (
             extremum_frequencies_times,
@@ -64,8 +75,8 @@ def eccentricity_at_extremum_frequency(
     time_at_sensitive_freq = find_x_for_y(
         extremum_frequencies_times, extremum_frequencies, piMf_extremum
     )
-    idx_e0 = abs(t.data.data - time_at_sensitive_freq).argmin()
-    e0 = e.data.data[idx_e0]
+    idx_e0 = abs(t - time_at_sensitive_freq).argmin()
+    e0 = e[idx_e0]
 
     if show_figures:
         import matplotlib.pyplot as plt
@@ -79,8 +90,8 @@ def eccentricity_at_extremum_frequency(
             markersize=1,
             label="extrema",
         )
-        ax1.plot(t.data.data, x.data.data**1.5, "--", label="x ** {3/2}")
-        ax1.plot(t.data.data, phidot.data.data, lw=0.5, label="omega")
+        ax1.plot(t, x**1.5, "--", label="x ** {3/2}")
+        ax1.plot(t, phidot, lw=0.5, label="omega")
 
         ax1.axhline(piMf_extremum, c="c", lw=1)
         ax1.axvline(time_at_sensitive_freq, c="r", lw=1)
@@ -89,7 +100,7 @@ def eccentricity_at_extremum_frequency(
         ax1.set_ylabel("Orbital angular velocity")
 
         ax = plt.twinx(ax2)
-        ax.plot(t.data.data, e.data.data, label="eccentricity", lw=1)
+        ax.plot(t, e, label="eccentricity", lw=1)
         ax.axhline(e0, c="k", lw=1)
         ax.set_xlim(ax1.get_xlim())
 
@@ -101,7 +112,7 @@ def eccentricity_at_extremum_frequency(
     return e0
 
 
-def eccentricity_at_reference_frequency(
+def eccentricity_at_reference_frequency_py(
     mass1,
     mass2,
     spin1z,
@@ -116,33 +127,43 @@ def eccentricity_at_reference_frequency(
 ):
     """ """
     itime = time.perf_counter()
-    retval = ls.SimInspiralESIGMADynamics(
+    retval = inspiral_esigma_dynamics(
         mass1, mass2, spin1z, spin2z, e0, f_lower, l0, 1e-12, sample_rate,
     )
-    t, x, e, l, phi, phidot, r, rdot = retval[:8]
-    t.data.data *= lal.MTSUN_SI
+    # t, x, e, l, phi, phidot, r, rdot = retval[:8]
+
+    t = np.asarray(retval["time_evol"])
+    x = np.asarray(retval["x_evol"])
+    e = np.asarray(retval["eccentricity_evol"])
+    l = np.asarray(retval["mean_ano_evol"])
+    phi = np.asarray(retval["phi_evol"])
+    phidot = np.asarray(retval["phi_dot_evol"])
+    r = np.asarray(retval["r_evol"])
+    rdot = np.asarray(retval["r_dot_evol"])
+
+    t *= lal.MTSUN_SI
 
     if verbose:
         print(f"Orbital evolution took: {time.perf_counter() - itime} seconds")
 
     x_reference = (np.pi * (mass1 + mass2) * lal.MTSUN_SI * f_reference) ** (2.0 / 3.0)
 
-    idx_e0 = abs(x.data.data - x_reference).argmin()
-    e0 = e.data.data[idx_e0]
+    idx_e0 = abs(x - x_reference).argmin()
+    e0 = e[idx_e0]
 
     if show_figures:
         import matplotlib.pyplot as plt
 
         fig, (ax) = plt.subplots(1, 1, figsize=(10, 5), sharex=True)
-        ax.plot(t.data.data, x.data.data**1.5, "--", label="x ** {3/2}")
-        ax.plot(t.data.data, phidot.data.data, lw=0.5, label="omega")
+        ax.plot(t, x**1.5, "--", label="x ** {3/2}")
+        ax.plot(t, phidot, lw=0.5, label="omega")
         ax.axhline(x_reference**1.5, color="c", lw=1)
-        ax.axvline(t.data.data[idx_e0], color="r", lw=1)
+        ax.axvline(t[idx_e0], color="r", lw=1)
         ax.set_xlabel("Time (s)")
         ax.set_ylabel("Orbital angular velocity")
 
         ax2 = plt.twinx(ax)
-        ax2.plot(t.data.data, e.data.data, label="eccentricity", lw=1)
+        ax2.plot(t, e, label="eccentricity", lw=1)
         ax2.axhline(e0, c="k", lw=1)
         ax2.set_xlim(ax.get_xlim())
 
@@ -153,7 +174,7 @@ def eccentricity_at_reference_frequency(
     return e0
 
 
-def get_inspiral_esigma_modes(
+def get_inspiral_esigma_modes_py(
     mass1,
     mass2,
     f_lower,
@@ -222,28 +243,29 @@ def get_inspiral_esigma_modes(
         itime = time.perf_counter()
     elif f_ref > f_lower:
         # Calculating new orbital variables
-        itime = time.perf_counter()
-        retval = ls.SimInspiralESIGMADynamicsBackwardInTime(
-            mass1,
-            mass2,
-            spin1z,
-            spin2z,
-            eccentricity,
-            f_ref,
-            f_lower,
-            mean_anomaly,
-            1e-12,
-            1 / delta_t,
-        )
-        t, x, e, l, phi, phidot, r, rdot = retval[:8]
-        eccentricity = e.data.data[-1]
-        mean_anomaly = l.data.data[-1]
-        f_start = f_lower
+        # itime = time.perf_counter()
+        # retval = ls.SimInspiralESIGMADynamicsBackwardInTime(
+        #     mass1,
+        #     mass2,
+        #     spin1z,
+        #     spin2z,
+        #     eccentricity,
+        #     f_ref,
+        #     f_lower,
+        #     mean_anomaly,
+        #     1e-12,
+        #     1 / delta_t,
+        # )
+        # t, x, e, l, phi, phidot, r, rdot = retval[:8]
+        # eccentricity = e[-1]
+        # mean_anomaly = l[-1]
+        # f_start = f_lower
+        raise ValueError('fref > flow case is currently not supported. Please set f_ref <= f_lower.')
     elif f_ref < f_lower:
         itime = time.perf_counter()
         f_start = f_ref
 
-    retval = ls.SimInspiralESIGMADynamics(
+    retval = inspiral_esigma_dynamics(
         mass1,
         mass2,
         spin1z,
@@ -256,16 +278,26 @@ def get_inspiral_esigma_modes(
     )
 
     if f_ref < f_lower:
+        x = np.asarray(retval["x_evol"])
         ref_idx = np.searchsorted(
-            (retval[1].data.data ** 1.5) / ((mass1 + mass2) * lal.MTSUN_SI * np.pi),
+            (x ** 1.5) / ((mass1 + mass2) * lal.MTSUN_SI * np.pi),
             f_lower,
         )
-        new_len = len(retval[0].data.data) - ref_idx
-        for ii in range(8):
-            lal.ResizeREAL8TimeSeries(retval[ii], ref_idx, new_len)
 
-    t, x, e, l, phi, phidot, r, rdot = retval[:8]
-    t.data.data *= (
+        for key in retval:
+            retval[key] = np.asarray(retval[key])[ref_idx:]
+
+    # t, x, e, l, phi, phidot, r, rdot = retval[:8]
+    t = np.asarray(retval["time_evol"])
+    x = np.asarray(retval["x_evol"])
+    e = np.asarray(retval["eccentricity_evol"])
+    l = np.asarray(retval["mean_ano_evol"])
+    phi = np.asarray(retval["phi_evol"])
+    phidot = np.asarray(retval["phi_dot_evol"])
+    r = np.asarray(retval["r_evol"])
+    rdot = np.asarray(retval["r_dot_evol"])
+
+    t *= (
         mass1 + mass2
     ) * lal.MTSUN_SI  # Time from geometrized units to seconds
 
@@ -282,15 +314,15 @@ def get_inspiral_esigma_modes(
     modes = {}
     distance *= 1.0e6 * lal.PC_SI  # Mpc to SI conversion
     for el, em in modes_to_use:
-        modes[(el, em)] = ls.SimInspiralESIGMAModeFromDynamics(
+        modes[(el, em)] = inspiral_esigma_mode_from_dynamics(
             el,
             em,
-            t.data,
-            x.data,
-            phi.data,
-            phidot.data,
-            r.data,
-            rdot.data,
+            t,
+            x,
+            phi,
+            phidot,
+            r,
+            rdot,
             mass1,
             mass2,
             spin1z,
@@ -301,14 +333,14 @@ def get_inspiral_esigma_modes(
     if return_pycbc_timeseries:
         modes = {
             k: pt.TimeSeries(
-                modes[k].data.data,
+                modes[k],
                 delta_t=delta_t,
-                epoch=-delta_t * (len(modes[k].data.data) - 1),
+                epoch=-delta_t * (len(modes[k]) - 1),
             )
             for k in modes
         }
     else:
-        modes = {k: np.asarray(modes[k].data.data) for k in modes}
+        modes = {k: np.asarray(modes[k]) for k in modes}
 
     if verbose:
         print(f"Modes generation took: {time.perf_counter() - itime} seconds")
@@ -321,20 +353,20 @@ def get_inspiral_esigma_modes(
         if return_pycbc_timeseries:
             for name in return_orbital_params:
                 exec(
-                    f"orbital_var_dict['{name}'] = pt.TimeSeries({name}.data.data, delta_t=delta_t, epoch=-delta_t * len({name}.data.data))"
+                    f"orbital_var_dict['{name}'] = pt.TimeSeries({name}, delta_t=delta_t, epoch=-delta_t * len({name}))"
                 )
             return orbital_var_dict, modes
 
         for name in return_orbital_params:
-            exec(f"orbital_var_dict['{name}'] = {name}.data.data")
-        return (t.data.data - t.data.data[-1]), orbital_var_dict, modes
+            exec(f"orbital_var_dict['{name}'] = {name}")
+        return (t - t[-1]), orbital_var_dict, modes
 
     if return_pycbc_timeseries:
         return modes
-    return (t.data.data - t.data.data[-1]), modes
+    return (t - t[-1]), modes
 
 
-def get_inspiral_esigma_waveform(
+def get_inspiral_esigma_waveform_py(
     mass1,
     mass2,
     f_lower,
@@ -389,7 +421,7 @@ def get_inspiral_esigma_waveform(
         hp, hc            -- Plus and cross GW polarizations
     """
 
-    retval = get_inspiral_esigma_modes(
+    retval = get_inspiral_esigma_modes_py(
         mass1=mass1,
         mass2=mass2,
         spin1z=spin1z,
@@ -830,7 +862,7 @@ parameters available with us: {available_inspiral_orbital_params}.
         f_Schwarz = 6.0**-1.5 / (mass1 + mass2) / lal.MTSUN_SI / lal.PI
         f_mr_transition = min(f_Kerr, f_Schwarz) * (mode_to_align_by_em / 2)
 
-    retval = get_inspiral_esigma_modes(
+    retval = get_inspiral_esigma_modes_py(
         mass1=mass1,
         mass2=mass2,
         spin1z=spin1z,
@@ -995,7 +1027,7 @@ requested is {f_mr_transition}Hz, which should be less than the maximum freq of
     while hlm_mr is not None:
         key = (hlm_mr.l, hlm_mr.m)
         if key in modes_to_use:
-            modes_mr_numpy[key] = hlm_mr.mode.data.data
+            modes_mr_numpy[key] = hlm_mr.mode
         hlm_mr = hlm_mr.next
 
     try:

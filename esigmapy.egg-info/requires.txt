@@ -1,0 +1,7 @@
+lscsoft_glue>=2.0.0
+matplotlib>=2.1
+numpy
+pycbc
+scipy>=1.2.3
+tpi-splines
+numba

@@ -10,7 +10,8 @@ import esigmapy
 import lal
 import lalsimulation as ls
 import pycbc.types as pt
-from .utils import f_ISCO_spin
+from ..utils import f_ISCO_spin
+from .esigma_pn_main import *
 
 ECCENTRICITY_LEVEL_ISCO_WARNING = 0.02
 ECCENTRICITY_LEVEL_ISCO_ERROR = 0.1
@@ -38,8 +39,8 @@ def eccentricity_at_extremum_frequency(
         return x[abs(y - y0).argmin()]
 
     itime = time.perf_counter()
-    retval = ls.SimInspiralESIGMADynamics(
-        mass1, mass2, spin1z, spin2z, e0, f_lower, l0, 1e-12, sample_rate, 
+    retval = inspiral_esigma_dynamics(
+        mass1, mass2, spin1z, spin2z, e0, f_lower, l0, 1e-12, sample_rate,
     )
     t, x, e, l, phi, phidot, r, rdot = retval[:8]
     t.data.data *= lal.MTSUN_SI
@@ -116,7 +117,7 @@ def eccentricity_at_reference_frequency(
 ):
     """ """
     itime = time.perf_counter()
-    retval = ls.SimInspiralESIGMADynamics(
+    retval = inspiral_esigma_dynamics(
         mass1, mass2, spin1z, spin2z, e0, f_lower, l0, 1e-12, sample_rate,
     )
     t, x, e, l, phi, phidot, r, rdot = retval[:8]
@@ -222,28 +223,29 @@ def get_inspiral_esigma_modes(
         itime = time.perf_counter()
     elif f_ref > f_lower:
         # Calculating new orbital variables
-        itime = time.perf_counter()
-        retval = ls.SimInspiralESIGMADynamicsBackwardInTime(
-            mass1,
-            mass2,
-            spin1z,
-            spin2z,
-            eccentricity,
-            f_ref,
-            f_lower,
-            mean_anomaly,
-            1e-12,
-            1 / delta_t,
-        )
-        t, x, e, l, phi, phidot, r, rdot = retval[:8]
-        eccentricity = e.data.data[-1]
-        mean_anomaly = l.data.data[-1]
-        f_start = f_lower
+        # itime = time.perf_counter()
+        # retval = ls.SimInspiralESIGMADynamicsBackwardInTime(
+        #     mass1,
+        #     mass2,
+        #     spin1z,
+        #     spin2z,
+        #     eccentricity,
+        #     f_ref,
+        #     f_lower,
+        #     mean_anomaly,
+        #     1e-12,
+        #     1 / delta_t,
+        # )
+        # t, x, e, l, phi, phidot, r, rdot = retval[:8]
+        # eccentricity = e.data.data[-1]
+        # mean_anomaly = l.data.data[-1]
+        # f_start = f_lower
+        raise ValueError('fref > flow case is currently not supported. Please set f_ref <= f_lower.')
     elif f_ref < f_lower:
         itime = time.perf_counter()
         f_start = f_ref
 
-    retval = ls.SimInspiralESIGMADynamics(
+    retval = inspiral_esigma_dynamics(
         mass1,
         mass2,
         spin1z,
@@ -282,7 +284,7 @@ def get_inspiral_esigma_modes(
     modes = {}
     distance *= 1.0e6 * lal.PC_SI  # Mpc to SI conversion
     for el, em in modes_to_use:
-        modes[(el, em)] = ls.SimInspiralESIGMAModeFromDynamics(
+        modes[(el, em)] = inspiral_esigma_mode_from_dynamics(
             el,
             em,
             t.data,

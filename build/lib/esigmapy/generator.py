@@ -38,8 +38,8 @@ def eccentricity_at_extremum_frequency(
         return x[abs(y - y0).argmin()]
 
     itime = time.perf_counter()
-    retval = ls.SimInspiralESIGMADynamics(
-        mass1, mass2, spin1z, spin2z, e0, f_lower, l0, 1e-12, sample_rate, 
+    retval = ls.SimInspiralENIGMADynamics(
+        mass1, mass2, spin1z, spin2z, e0, f_lower, l0, 1e-12, sample_rate, False
     )
     t, x, e, l, phi, phidot, r, rdot = retval[:8]
     t.data.data *= lal.MTSUN_SI
@@ -116,8 +116,8 @@ def eccentricity_at_reference_frequency(
 ):
     """ """
     itime = time.perf_counter()
-    retval = ls.SimInspiralESIGMADynamics(
-        mass1, mass2, spin1z, spin2z, e0, f_lower, l0, 1e-12, sample_rate,
+    retval = ls.SimInspiralENIGMADynamics(
+        mass1, mass2, spin1z, spin2z, e0, f_lower, l0, 1e-12, sample_rate, False
     )
     t, x, e, l, phi, phidot, r, rdot = retval[:8]
     t.data.data *= lal.MTSUN_SI
@@ -243,7 +243,7 @@ def get_inspiral_esigma_modes(
         itime = time.perf_counter()
         f_start = f_ref
 
-    retval = ls.SimInspiralESIGMADynamics(
+    retval = ls.SimInspiralENIGMADynamics(
         mass1,
         mass2,
         spin1z,
@@ -253,6 +253,7 @@ def get_inspiral_esigma_modes(
         mean_anomaly,
         1e-12,
         1 / delta_t,
+        False,
     )
 
     if f_ref < f_lower:
@@ -282,7 +283,7 @@ def get_inspiral_esigma_modes(
     modes = {}
     distance *= 1.0e6 * lal.PC_SI  # Mpc to SI conversion
     for el, em in modes_to_use:
-        modes[(el, em)] = ls.SimInspiralESIGMAModeFromDynamics(
+        modes[(el, em)] = ls.SimInspiralENIGMAModeFromDynamics(
             el,
             em,
             t.data,
