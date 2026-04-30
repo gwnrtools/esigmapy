@@ -1,0 +1,15 @@
+# Build and distribution folders
+build/
+dist/
+*.egg-info/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Environments (if you use them locally)
+venv/
+.env
+
+# ipynb folders
+.ipynb_checkpoints/

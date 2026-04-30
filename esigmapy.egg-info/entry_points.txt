@@ -1,2 +1,0 @@
-[pycbc.waveform.td]
-esigma = esigmapy:pycbc_esigma
