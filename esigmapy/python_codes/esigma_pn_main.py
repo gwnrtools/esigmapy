@@ -236,7 +236,7 @@ def inspiral_esigma_mode_from_dynamics(
     scaling inside compute_mode_from_dynamics (matches the C end result).
     """
     mode_pn_order = int(os.environ.get("ModePNOrder", ModePNOrderDefault))
-    print(mode_pn_order)
+    print('Mode PN order =',mode_pn_order)
 
     return compute_mode_from_dynamics(
         l, m,
@@ -363,7 +363,7 @@ def inspiral_esigma_dynamics(
     # PN / radiation order (mirror the C env-var logic; default hardcoded)
     import os
     rad_pn_order = int(os.environ.get("RadiationPNOrder", RadiationPNOrderDefault))
-
+    print('Radiation PN order =',rad_pn_order)
     params = Params(
                     eta=eta,
                     radiation_pn_order=rad_pn_order,
