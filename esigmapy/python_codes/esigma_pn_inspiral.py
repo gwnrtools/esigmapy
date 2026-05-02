@@ -2638,12 +2638,11 @@ def de_dt(radiation_pn_order: int,
 
     if radiation_pn_order >= 6:
         inst += e_dot_3pn(e, eta, x) * x3
-        inst += e_dot_3_5pn(e, eta) * x3 * np.sqrt(x)
         inst += e_dot_3pn_SO(e, m1, m2, S1z, S2z) * x3
         inst += e_dot_3pn_SS(e, m1, m2, S1z, S2z) * x3
 
     if radiation_pn_order >= 7:
-        inst += 0.0 # placeholder for higher order terms, not implemented
+        inst += e_dot_3_5pn(e, eta) * x3 * np.sqrt(x)
 
     if radiation_pn_order >= 8:
         inst += 0.0 # placeholder for higher order terms, not implemented
