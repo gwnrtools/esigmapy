@@ -13,3 +13,6 @@ venv/
 
 # ipynb folders
 .ipynb_checkpoints/
+
+# vs code
+.vscode
