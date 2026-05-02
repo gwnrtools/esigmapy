@@ -12,6 +12,7 @@ import lalsimulation as ls
 import pycbc.types as pt
 from ..utils import f_ISCO_spin
 from .esigma_pn_main import *
+from ..generator import _get_transition_frequency_window
 
 ECCENTRICITY_LEVEL_ISCO_WARNING = 0.02
 ECCENTRICITY_LEVEL_ISCO_ERROR = 0.1
@@ -469,208 +470,208 @@ def get_inspiral_esigma_waveform_py(
     return t, hp, hc
 
 
-def _get_window_start(freq_, delta_t_, delta_phi_, direction="forward"):
-    """Integrates frequency backward/forward from the start/end until
-    `delta_phi_` radians of orbital phase has elapsed.
+# def _get_window_start(freq_, delta_t_, delta_phi_, direction="forward"):
+#     """Integrates frequency backward/forward from the start/end until
+#     `delta_phi_` radians of orbital phase has elapsed.
 
-    Args:
-        freq_ (numpy.array):  Frequency time series, uniformly sampled
-        delta_t_ (float64):   Step size in time
-        delta_phi_ (float64): Phase shift in radians to integrate across
-        direction (str, optional): Direction of integration in time.
-                                   Defaults to "forward".
+#     Args:
+#         freq_ (numpy.array):  Frequency time series, uniformly sampled
+#         delta_t_ (float64):   Step size in time
+#         delta_phi_ (float64): Phase shift in radians to integrate across
+#         direction (str, optional): Direction of integration in time.
+#                                    Defaults to "forward".
 
-    Returns:
-        int: Index in frequency array where `delta_phi` is reached
-    """
-    from scipy import integrate
+#     Returns:
+#         int: Index in frequency array where `delta_phi` is reached
+#     """
+#     from scipy import integrate
 
-    if direction == "backward":
-        for idx in range(len(freq_) - 2, 0, -1):
-            # this could be optimized to not repeat integration
-            if abs(integrate.trapezoid(freq_[idx:], dx=delta_t_)) >= abs(delta_phi_):
-                return idx
-    elif direction == "forward":
-        for idx in range(1, len(freq_)):
-            # this could be optimized to not repeat integration
-            if abs(integrate.trapezoid(freq_[: idx + 1], dx=delta_t_)) >= abs(
-                delta_phi_
-            ):
-                return idx
-
-
-def _get_transition_frequency_window(
-    orbital_phase,
-    orbital_freq,
-    delta_t,
-    f_mr_transition,  # orbital frequency
-    num_hyb_orbits,
-    keep_f_mr_transition_at_center,
-    blend_using_avg_orbital_frequency,
-    failsafe,
-    verbose=False,
-):
-    """
-    This function first finds where the `orbital_freq` crosses the transition
-    frequency `f_mr_transition`, and finds the point in time that is
-    `num_hyb_orbits` orbits before that time. This marks the start of the
-    hybridization window, and the orbital frequency at that time is returned
-
-    Parameters:
-    -----------
-        orbital_phase             -- Orbital phase evolution
-        orbital_freq              -- Orbital frequency evolution
-        delta_t                   -- Waveform's time grid-spacing (s)
-        f_mr_transition           -- Inspiral to merger transition frequency
-                                     (Hz). This should be the same (mode/orbital)
-                                     frequency as passed for `orbital_freq`.
-        num_hyb_orbits            -- number of orbital cycles to blend over.
-        keep_f_mr_transition_at_center    -- If True, `f_mr_transition` is kept
-                                     at the center of the hybridization window.
-                                     Otherwise, it's kept at the end of the
-                                     window (default).
-        blend_using_avg_orbital_frequency -- If True, the orbit averaged
-                                     frequency during the inspiral is used to
-                                     blend modes, instead of the modes'
-                                     frequency.
-        failsafe                  -- If True, we make reasonable choices for the
-                                     user, if the inputs to this method lead
-                                     into exceptions.
-        verbose                   -- Verbosity flag
-
-    Returns:
-    --------
-        f_window_mr_transition    -- Hybridization frequency window (in Hz).
-    """
-    transition_idx = (
-        len(orbital_freq) - 1 - np.argmax(orbital_freq[::-1] < f_mr_transition)
-    )  # index at which orbital_freq becomes just smaller than transition orbital
-    # frequency, towards the end of waveform
-
-    if verbose > 4:
-        print(
-            f"""Transition frequency found at index {transition_idx}
-            in the orbital frequency array of length {len(orbital_freq)}"""
-        )
-
-    if blend_using_avg_orbital_frequency:
-        # We integrate `orbital_freq` to obtain `orbital_phase`
-        from scipy import integrate
-
-        orbital_phase = integrate.cumulative_trapezoid(
-            orbital_freq, dx=delta_t, initial=0
-        )
-        if len(orbital_phase) != len(orbital_freq):
-            raise RuntimeError(
-                f"""Something went wrong while integrating orbital frequency.
-They have different lengths: {len(orbital_freq)} and {len(orbital_phase)}."""
-            )
-
-    if keep_f_mr_transition_at_center:
-        # Orbital cycle based hybridization that keeps f_mr_transition at
-        # the hybridization frequency window's midpoint
-        if blend_using_avg_orbital_frequency:
-            window_start_idx = _get_window_start(
-                orbital_freq[: transition_idx + 1],
-                delta_t,
-                num_hyb_orbits * np.pi,
-                direction="backward",
-            )
-            window_end_idx = transition_idx + _get_window_start(
-                orbital_freq[transition_idx:],
-                delta_t,
-                num_hyb_orbits * np.pi,
-                direction="forward",
-            )
-            # FAILSAFE mode behavior
-            if window_start_idx is None:
-                if failsafe:
-                    window_start_idx = 0
-                else:
-                    raise RuntimeError(
-                        f"""Requested number of orbits to blend over not available
-in the waveform before the transition frequency. Either decrease the number of
-orbits to blend over (currently {num_hyb_orbits}) or increase the
-inspiral-to-merger transition frequency. `window_start_idx` is None."""
-                    )
-            if window_end_idx is None:
-                if failsafe:
-                    window_end_idx = len(orbital_freq) - 1
-                else:
-                    raise RuntimeError(
-                        f"""Requested number of orbits to blend over not available
-in the waveform after the transition frequency. Either decrease the number of
-orbits to blend over (currently {num_hyb_orbits}) or decrease the
-inspiral-to-merger transition frequency. `window_end_idx` is None."""
-                    )
-        else:
-            # phase is always a monotonically increasing function,
-            #    hence using the more efficient np.searchsorted method
-            window_start_idx = -1 + np.searchsorted(
-                orbital_phase, orbital_phase[transition_idx] - num_hyb_orbits * np.pi
-            )
-            window_end_idx = np.searchsorted(
-                orbital_phase, orbital_phase[transition_idx] + num_hyb_orbits * np.pi
-            )
-        f_window_mr_transition = 2 * np.min(
-            [
-                orbital_freq[window_end_idx] - f_mr_transition,
-                f_mr_transition - orbital_freq[window_start_idx],
-            ]
-        )
-    elif not keep_f_mr_transition_at_center:
-        # Orbital cycle based hybridization that keeps f_mr_transition at
-        # the hybridization frequency window's right end
-        if blend_using_avg_orbital_frequency:
-            window_start_idx = _get_window_start(
-                orbital_freq[: transition_idx + 1],
-                delta_t,
-                2 * num_hyb_orbits * np.pi,
-                direction="backward",
-            )
-            if window_start_idx is None:
-                if failsafe:
-                    window_start_idx = 0
-                else:
-                    raise RuntimeError(
-                        f"""Requested number of orbits to blend over not available
-in the waveform before the transition frequency. Either decrease the number of
-orbits to blend over (currently {num_hyb_orbits}) or increase the
-inspiral-to-merger transition frequency. `window_start_idx` is None."""
-                    )
-        else:
-            # Orbital cycle based hybridization that keeps f_mr_transition
-            # at the hybridization frequency window's end
-            window_start_idx = (
-                np.searchsorted(
-                    orbital_phase,
-                    orbital_phase[transition_idx] - 2 * np.pi * num_hyb_orbits,
-                )
-                - 1
-            )
-        f_window_mr_transition = (
-            orbital_freq[transition_idx] - orbital_freq[window_start_idx]
-        )
-
-        if verbose > 4:
-            print(
-                f"""The transition is to happen in a window from
-                frequencies: [{orbital_freq[window_start_idx]}, {orbital_freq[transition_idx]}]Hz,
-                between indices: [{window_start_idx}, {transition_idx}]"""
-            )
-    else:
-        raise RuntimeError(
-            """We should never reach here. Did you set a non-bool value for the
-            flag `keep_f_mr_transition_at_center`?"""
-        )
-
-    if verbose > 4:
-        print(f"""f_window_mr_transition = {f_window_mr_transition}""")
-
-    return f_window_mr_transition
+#     if direction == "backward":
+#         for idx in range(len(freq_) - 2, 0, -1):
+#             # this could be optimized to not repeat integration
+#             if abs(integrate.trapezoid(freq_[idx:], dx=delta_t_)) >= abs(delta_phi_):
+#                 return idx
+#     elif direction == "forward":
+#         for idx in range(1, len(freq_)):
+#             # this could be optimized to not repeat integration
+#             if abs(integrate.trapezoid(freq_[: idx + 1], dx=delta_t_)) >= abs(
+#                 delta_phi_
+#             ):
+#                 return idx
 
 
-def get_imr_esigma_modes(
+# def _get_transition_frequency_window(
+#     orbital_phase,
+#     orbital_freq,
+#     delta_t,
+#     f_mr_transition,  # orbital frequency
+#     num_hyb_orbits,
+#     keep_f_mr_transition_at_center,
+#     blend_using_avg_orbital_frequency,
+#     failsafe,
+#     verbose=False,
+# ):
+#     """
+#     This function first finds where the `orbital_freq` crosses the transition
+#     frequency `f_mr_transition`, and finds the point in time that is
+#     `num_hyb_orbits` orbits before that time. This marks the start of the
+#     hybridization window, and the orbital frequency at that time is returned
+
+#     Parameters:
+#     -----------
+#         orbital_phase             -- Orbital phase evolution
+#         orbital_freq              -- Orbital frequency evolution
+#         delta_t                   -- Waveform's time grid-spacing (s)
+#         f_mr_transition           -- Inspiral to merger transition frequency
+#                                      (Hz). This should be the same (mode/orbital)
+#                                      frequency as passed for `orbital_freq`.
+#         num_hyb_orbits            -- number of orbital cycles to blend over.
+#         keep_f_mr_transition_at_center    -- If True, `f_mr_transition` is kept
+#                                      at the center of the hybridization window.
+#                                      Otherwise, it's kept at the end of the
+#                                      window (default).
+#         blend_using_avg_orbital_frequency -- If True, the orbit averaged
+#                                      frequency during the inspiral is used to
+#                                      blend modes, instead of the modes'
+#                                      frequency.
+#         failsafe                  -- If True, we make reasonable choices for the
+#                                      user, if the inputs to this method lead
+#                                      into exceptions.
+#         verbose                   -- Verbosity flag
+
+#     Returns:
+#     --------
+#         f_window_mr_transition    -- Hybridization frequency window (in Hz).
+#     """
+#     transition_idx = (
+#         len(orbital_freq) - 1 - np.argmax(orbital_freq[::-1] < f_mr_transition)
+#     )  # index at which orbital_freq becomes just smaller than transition orbital
+#     # frequency, towards the end of waveform
+
+#     if verbose > 4:
+#         print(
+#             f"""Transition frequency found at index {transition_idx}
+#             in the orbital frequency array of length {len(orbital_freq)}"""
+#         )
+
+#     if blend_using_avg_orbital_frequency:
+#         # We integrate `orbital_freq` to obtain `orbital_phase`
+#         from scipy import integrate
+
+#         orbital_phase = integrate.cumulative_trapezoid(
+#             orbital_freq, dx=delta_t, initial=0
+#         )
+#         if len(orbital_phase) != len(orbital_freq):
+#             raise RuntimeError(
+#                 f"""Something went wrong while integrating orbital frequency.
+# They have different lengths: {len(orbital_freq)} and {len(orbital_phase)}."""
+#             )
+
+#     if keep_f_mr_transition_at_center:
+#         # Orbital cycle based hybridization that keeps f_mr_transition at
+#         # the hybridization frequency window's midpoint
+#         if blend_using_avg_orbital_frequency:
+#             window_start_idx = _get_window_start(
+#                 orbital_freq[: transition_idx + 1],
+#                 delta_t,
+#                 num_hyb_orbits * np.pi,
+#                 direction="backward",
+#             )
+#             window_end_idx = transition_idx + _get_window_start(
+#                 orbital_freq[transition_idx:],
+#                 delta_t,
+#                 num_hyb_orbits * np.pi,
+#                 direction="forward",
+#             )
+#             # FAILSAFE mode behavior
+#             if window_start_idx is None:
+#                 if failsafe:
+#                     window_start_idx = 0
+#                 else:
+#                     raise RuntimeError(
+#                         f"""Requested number of orbits to blend over not available
+# in the waveform before the transition frequency. Either decrease the number of
+# orbits to blend over (currently {num_hyb_orbits}) or increase the
+# inspiral-to-merger transition frequency. `window_start_idx` is None."""
+#                     )
+#             if window_end_idx is None:
+#                 if failsafe:
+#                     window_end_idx = len(orbital_freq) - 1
+#                 else:
+#                     raise RuntimeError(
+#                         f"""Requested number of orbits to blend over not available
+# in the waveform after the transition frequency. Either decrease the number of
+# orbits to blend over (currently {num_hyb_orbits}) or decrease the
+# inspiral-to-merger transition frequency. `window_end_idx` is None."""
+#                     )
+#         else:
+#             # phase is always a monotonically increasing function,
+#             #    hence using the more efficient np.searchsorted method
+#             window_start_idx = -1 + np.searchsorted(
+#                 orbital_phase, orbital_phase[transition_idx] - num_hyb_orbits * np.pi
+#             )
+#             window_end_idx = np.searchsorted(
+#                 orbital_phase, orbital_phase[transition_idx] + num_hyb_orbits * np.pi
+#             )
+#         f_window_mr_transition = 2 * np.min(
+#             [
+#                 orbital_freq[window_end_idx] - f_mr_transition,
+#                 f_mr_transition - orbital_freq[window_start_idx],
+#             ]
+#         )
+#     elif not keep_f_mr_transition_at_center:
+#         # Orbital cycle based hybridization that keeps f_mr_transition at
+#         # the hybridization frequency window's right end
+#         if blend_using_avg_orbital_frequency:
+#             window_start_idx = _get_window_start(
+#                 orbital_freq[: transition_idx + 1],
+#                 delta_t,
+#                 2 * num_hyb_orbits * np.pi,
+#                 direction="backward",
+#             )
+#             if window_start_idx is None:
+#                 if failsafe:
+#                     window_start_idx = 0
+#                 else:
+#                     raise RuntimeError(
+#                         f"""Requested number of orbits to blend over not available
+# in the waveform before the transition frequency. Either decrease the number of
+# orbits to blend over (currently {num_hyb_orbits}) or increase the
+# inspiral-to-merger transition frequency. `window_start_idx` is None."""
+#                     )
+#         else:
+#             # Orbital cycle based hybridization that keeps f_mr_transition
+#             # at the hybridization frequency window's end
+#             window_start_idx = (
+#                 np.searchsorted(
+#                     orbital_phase,
+#                     orbital_phase[transition_idx] - 2 * np.pi * num_hyb_orbits,
+#                 )
+#                 - 1
+#             )
+#         f_window_mr_transition = (
+#             orbital_freq[transition_idx] - orbital_freq[window_start_idx]
+#         )
+
+#         if verbose > 4:
+#             print(
+#                 f"""The transition is to happen in a window from
+#                 frequencies: [{orbital_freq[window_start_idx]}, {orbital_freq[transition_idx]}]Hz,
+#                 between indices: [{window_start_idx}, {transition_idx}]"""
+#             )
+#     else:
+#         raise RuntimeError(
+#             """We should never reach here. Did you set a non-bool value for the
+#             flag `keep_f_mr_transition_at_center`?"""
+#         )
+
+#     if verbose > 4:
+#         print(f"""f_window_mr_transition = {f_window_mr_transition}""")
+
+#     return f_window_mr_transition
+
+
+def get_imr_esigma_modes_py(
     mass1,
     mass2,
     f_lower,
@@ -1027,7 +1028,7 @@ requested is {f_mr_transition}Hz, which should be less than the maximum freq of
     while hlm_mr is not None:
         key = (hlm_mr.l, hlm_mr.m)
         if key in modes_to_use:
-            modes_mr_numpy[key] = hlm_mr.mode
+            modes_mr_numpy[key] = hlm_mr.mode.data.data
         hlm_mr = hlm_mr.next
 
     try:
@@ -1047,7 +1048,7 @@ requested is {f_mr_transition}Hz, which should be less than the maximum freq of
         )
     except Exception as exc:
         print(
-            f"""Inspiral + MergerRingdown attachment failed. Its very likely
+            f"""Inspiral + MergerRingdown attachment failed. It's very likely
 that you entered a very large initial eccentricity {eccentricity}. The orbital
 eccentricity at the end of inspiral was {orbital_eccentricity[-1]}
               """
@@ -1086,7 +1087,7 @@ eccentricity at the end of inspiral was {orbital_eccentricity[-1]}
     return modes_imr
 
 
-def get_imr_esigma_waveform(
+def get_imr_esigma_waveform_py(
     mass1,
     mass2,
     f_lower,
