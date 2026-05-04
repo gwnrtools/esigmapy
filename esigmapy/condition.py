@@ -254,13 +254,13 @@ def compute_taper_width(waveform, method="cycles", fixed_duration=0.3, n_cycles=
 
 def apply_taper(
     waveform,
-    beta=8,
     taper_width=None,
     method="cycles",
     fixed_duration=0.3,
     n_cycles=1,
     f_lower=1.0,
     window="kaiser",
+    beta_kaiser=8,
     delta_t=None,
     verbose=False,
 ):
@@ -271,7 +271,7 @@ def apply_taper(
     -----------
     waveform : TimeSeries or np.ndarray
         The input waveform to be tapered
-    beta : int
+    beta_kaiser : int
         Kaiser window parameter for kaiser window (default: 8)
     taper_width : float or None
         The width of the taper in seconds. If None, computed automatically
@@ -351,11 +351,11 @@ def apply_taper(
             
             t_start = temp_ts.sample_times[0]
             t_end_taper = t_start + (taper_width * delta_t) # samples → seconds for PyCBC
-            tapered_ts = td_taper(temp_ts, t_start, t_end_taper, beta=beta, side="left")
+            tapered_ts = td_taper(temp_ts, t_start, t_end_taper, beta=beta_kaiser, side="left")
             tapered_data = tapered_ts.data
             
             if verbose:
-                print(f"Applied kaiser window ({taper_width} samples, beta={beta})")
+                print(f"Applied kaiser window ({taper_width} samples, beta_kaiser={beta_kaiser})")
         except ImportError as e:
             raise ImportError(f"PyCBC td_taper is required for kaiser window: {str(e)}")
         except Exception as e:
@@ -387,11 +387,11 @@ def apply_taper(
 def apply_taper_both_pols(
     hp,
     hc,
-    beta=8,
     method="cycles",
     n_cycles=1,
     f_lower=1.0,
-    window="kaiser",
+    window="planck",
+    beta_kaiser=8,
     delta_t=None,
     verbose=False,
 ):
@@ -404,7 +404,7 @@ def apply_taper_both_pols(
         Plus polarization waveform
     hc : TimeSeries or np.ndarray
         Cross polarization waveform
-    beta : int
+    beta_kaiser : int
         Kaiser window parameter (default: 8)
     method : str
         Taper width computation method: 'cycles' or 'fixed_time' (default: 'cycles')
@@ -421,7 +421,7 @@ def apply_taper_both_pols(
     -----------
     hp, hc : TimeSeries or np.ndarray
         The plus and cross polarizations to taper (must be same type)
-    beta : int
+    beta_kaiser : int
         Kaiser window parameter for kaiser window (default: 8)
     method : str
         Method for computing taper width ('cycles' or 'fixed_time', default: 'cycles')
@@ -481,23 +481,23 @@ def apply_taper_both_pols(
     try:
         hp_tapered = apply_taper(
             hp,
-            beta=beta,
             taper_width=taper_width,
             method=method,
             n_cycles=n_cycles,
             f_lower=f_lower,
             window=window,
+            beta_kaiser=beta_kaiser,
             delta_t=hp_info['delta_t'],
             verbose=verbose,
         )
         hc_tapered = apply_taper(
             hc,
-            beta=beta,
             taper_width=taper_width,
             method=method,
             n_cycles=n_cycles,
             f_lower=f_lower,
             window=window,
+            beta_kaiser=beta_kaiser,
             delta_t=hc_info['delta_t'],
             verbose=verbose,
         )
