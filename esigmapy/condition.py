@@ -227,7 +227,6 @@ def compute_taper_width(waveform, method="cycles", fixed_duration=0.3, n_cycles=
         if len(extrema) >= n_extrema_needed:
             # Calculate taper width in indices, then convert to time
             taper_width = int(extrema[n_extrema_needed - 1] - extrema[0])
-            #taper_width = taper_width_idx * delta_t
         else:
             # Fallback to fixed time
             import warnings
@@ -238,10 +237,6 @@ def compute_taper_width(waveform, method="cycles", fixed_duration=0.3, n_cycles=
             taper_width = int(fixed_duration / delta_t)
 
     elif method == "fixed_time":
-        # Use fixed duration, ensure it doesn't exceed 10% of waveform
-        # taper_width_idx = int(len(data) * 0.1)  # 10% of waveform
-        # taper_width = min(fixed_duration, taper_width_idx * delta_t)
-
         # Cap at 10% of the waveform length; take the smaller of that and
         # the user-specified fixed_duration (both expressed in samples)
         taper_width = min(int(fixed_duration / delta_t), int(len(data) * 0.1))
@@ -271,10 +266,8 @@ def apply_taper(
     -----------
     waveform : TimeSeries or np.ndarray
         The input waveform to be tapered
-    beta_kaiser : int
-        Kaiser window parameter for kaiser window (default: 8)
     taper_width : float or None
-        The width of the taper in seconds. If None, computed automatically
+        The width of the taper in samples. If None, computed automatically
     method : str
         Method for auto-computing taper width ('cycles' or 'fixed_time', default: 'cycles')
     fixed_duration : float
@@ -286,6 +279,8 @@ def apply_taper(
     window : str
         Window function to use: 'kaiser' (Kaiser window) or 'planck' (LAL Planck window)
         (default: 'planck')
+    beta_kaiser : int
+        Kaiser window parameter for kaiser window (default: 8)
     delta_t : float or None
         Time step. Required if waveform is a numpy array. Automatically extracted if waveform is a TimeSeries.
     verbose : bool
@@ -327,18 +322,14 @@ def apply_taper(
                     f"({taper_width * delta_t:.6f} s) "
                     f"(method: {method}, window: {window})"
                 )
-                #print(f"Auto-computed taper width: {taper_width:.6f} s (method: {method}, window: {window})")
         except Exception as e:
             raise ValueError(f"Failed to compute taper width: {str(e)}")
-    #taper_width_idx = int(taper_width / delta_t)
     if taper_width < 1:
         raise ValueError(
             f"Taper width ({taper_width} samples) must be at least 1 sample."
         )
-        #raise ValueError(f"Computed taper width ({taper_width:.6f} s) is less than one sample (delta_t={delta_t:.6f} s)")
     
     if window == "kaiser":
-        # Kaiser window method using PyCBC's td_taper - works for both numpy array and TimeSeries
         try:
             from pycbc.waveform.utils import td_taper
             import pycbc.types as pt
@@ -350,7 +341,7 @@ def apply_taper(
                 temp_ts = waveform
             
             t_start = temp_ts.sample_times[0]
-            t_end_taper = t_start + (taper_width * delta_t) # samples → seconds for PyCBC
+            t_end_taper = t_start + (taper_width * delta_t)
             tapered_ts = td_taper(temp_ts, t_start, t_end_taper, beta=beta_kaiser, side="left")
             tapered_data = tapered_ts.data
             
@@ -404,8 +395,6 @@ def apply_taper_both_pols(
         Plus polarization waveform
     hc : TimeSeries or np.ndarray
         Cross polarization waveform
-    beta_kaiser : int
-        Kaiser window parameter (default: 8)
     method : str
         Taper width computation method: 'cycles' or 'fixed_time' (default: 'cycles')
     n_cycles : int
@@ -414,21 +403,10 @@ def apply_taper_both_pols(
         Lowest frequency supported (Hz). Used to calculate taper width for 'cycles' method (default: 1.0)
     window : str
         Window function: 'kaiser' or 'planck' (default: 'planck')
-    verbose : bool
-        Verbosity flag (default: False)
+    beta_kaiser : int
+        Kaiser window parameter (default: 8)
     delta_t : float
         Sampling interval (default: None)
-    -----------
-    hp, hc : TimeSeries or np.ndarray
-        The plus and cross polarizations to taper (must be same type)
-    beta_kaiser : int
-        Kaiser window parameter for kaiser window (default: 8)
-    method : str
-        Method for computing taper width ('cycles' or 'fixed_time', default: 'cycles')
-    n_cycles : int
-        Number of cycles for 'cycles' method (default: 1)
-    window : str
-        Window function: 'kaiser' or 'planck' (default: 'planck')
     verbose : bool
         Verbosity flag (default: False)
     
@@ -473,7 +451,6 @@ def apply_taper_both_pols(
                 f"({taper_width * hp_info['delta_t']:.6f} s) "
                 f"(method: {method}, n_cycles: {n_cycles})"
             )
-            #print(f"Computed taper width from h+: {taper_width} samples (method: {method}, n_cycles: {n_cycles})")
     except Exception as e:
         raise ValueError(f"Failed to compute taper width: {str(e)}")
     
