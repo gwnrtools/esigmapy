@@ -3,6 +3,7 @@
 import numpy as np
 from numba import njit
 from scipy.signal import find_peaks
+from .utils import extract_waveform_info
 
 # AM: This code is basically the Python version of the Planck tapering C code in LAL:
 # https://lscsoft.docs.ligo.org/lalsuite/lalsimulation/_l_a_l_sim_inspiral_waveform_taper_8c_source.html
@@ -10,41 +11,6 @@ from scipy.signal import find_peaks
 # following Python code can taper a user-specified number of extrema of the signal
 
 LALSIMULATION_RINGING_EXTENT = 19
-
-
-def _extract_waveform_info(waveform, delta_t=None):
-    """
-    Extract data, delta_t, from waveform object. This is needed to handle 
-    both numpy arrays and PyCBC TimeSeries objects in a consistent way.
-    
-    Parameters:
-    -----------
-    waveform : np.ndarray or Pycbc TimeSeries
-        Input waveform
-    delta_t : float or None
-        Time step (required for numpy array, extracted from TimeSeries otherwise)
-    
-    Returns:
-    --------
-    dict : Contains 'data', 'delta_t', 'is_timeseries'
-    """
-    info = {'is_timeseries': False}
-    
-    if isinstance(waveform, np.ndarray): # this checks that the input is a numpy array
-        if delta_t is None:
-            raise ValueError("delta_t must be provided when waveform is a numpy array.")
-        info['data'] = waveform
-        info['delta_t'] = delta_t
-        info['is_timeseries'] = False
-    else:
-        # This checks that the input is a PyCBC TimeSeries
-        if not hasattr(waveform, 'delta_t') or not hasattr(waveform, 'data'):
-            raise TypeError("Input must be either np.ndarray or PyCBC TimeSeries with 'delta_t' and 'data' attributes.")
-        info['data'] = waveform.data
-        info['delta_t'] = waveform.delta_t
-        info['is_timeseries'] = True
-    
-    return info
 
 
 @njit
@@ -197,7 +163,7 @@ def compute_taper_width(waveform, method="cycles", fixed_duration=0.3, n_cycles=
     ValueError : If delta_t is not provided for numpy array or if method is invalid
     """
     try:
-        info = _extract_waveform_info(waveform, delta_t=delta_t)
+        info = extract_waveform_info(waveform, delta_t=delta_t)
     except (ValueError, TypeError) as e:
         raise ValueError(f"Failed to extract waveform info: {str(e)}")
     
@@ -297,7 +263,7 @@ def apply_taper(
     """
     # Extract waveform information
     try:
-        info = _extract_waveform_info(waveform)
+        info = extract_waveform_info(waveform, delta_t=delta_t)
     except (ValueError, TypeError) as e:
         raise TypeError(f"Invalid waveform input: {str(e)}")
     
@@ -429,8 +395,8 @@ def apply_taper_both_pols(
     
     # Extract info from both
     try:
-        hp_info = _extract_waveform_info(hp, delta_t=delta_t)
-        hc_info = _extract_waveform_info(hc, delta_t=delta_t)
+        hp_info = extract_waveform_info(hp, delta_t=delta_t)
+        hc_info = extract_waveform_info(hc, delta_t=delta_t)
     except (ValueError, TypeError) as e:
         raise TypeError(f"Failed to extract polarization info: {str(e)}")
     

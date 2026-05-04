@@ -187,3 +187,38 @@ def get_polarizations_from_multipoles(
             hc = hc - glm.imag()
 
     return hp, hc
+
+
+def extract_waveform_info(waveform, delta_t=None):
+    """
+    Extract data, delta_t, from waveform object. This is needed to handle 
+    both numpy arrays and PyCBC TimeSeries objects in a consistent way.
+    
+    Parameters:
+    -----------
+    waveform : np.ndarray or Pycbc TimeSeries
+        Input waveform
+    delta_t : float or None
+        Time step (required for numpy array, extracted from TimeSeries otherwise)
+    
+    Returns:
+    --------
+    dict : Contains 'data', 'delta_t', 'is_timeseries'
+    """
+    info = {'is_timeseries': False}
+    
+    if isinstance(waveform, np.ndarray): # this checks that the input is a numpy array
+        if delta_t is None:
+            raise ValueError("delta_t must be provided when waveform is a numpy array.")
+        info['data'] = waveform
+        info['delta_t'] = delta_t
+        info['is_timeseries'] = False
+    else:
+        # This checks that the input is a PyCBC TimeSeries
+        if not hasattr(waveform, 'delta_t') or not hasattr(waveform, 'data'):
+            raise TypeError("Input must be either np.ndarray or PyCBC TimeSeries with 'delta_t' and 'data' attributes.")
+        info['data'] = waveform.data
+        info['delta_t'] = waveform.delta_t
+        info['is_timeseries'] = True
+    
+    return info
