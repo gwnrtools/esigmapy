@@ -91,7 +91,7 @@ The instructions to generate `ESIGMAHM` waveforms and the various functionalitie
 ### Installation
 * Install `ESIGMAPy` by running:
   ```bash
-  pip install git+https://github.com/gwnrtools/esigmapy.git
+  pip install "esigmapy[surrogate] @ git+https://github.com/gwnrtools/esigmapy.git"
   ```
   It **does not** require the custom LALSuite installation above. 
 
