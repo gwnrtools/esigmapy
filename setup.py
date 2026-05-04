@@ -124,9 +124,11 @@ if __name__ == "__main__":
                 "tpi-splines",
                 "numba",
             ],
+            "pyseobnr": ["pyseobnr"],
             "all": [
                 "tpi-splines",
                 "numba",
+                "pyseobnr",
             ],
         },
         scripts=[],
