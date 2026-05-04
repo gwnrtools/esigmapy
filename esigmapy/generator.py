@@ -425,7 +425,7 @@ def get_inspiral_esigma_waveform(
         verbose=verbose,
     )
     if condition == 1:
-            hp, hc, _ = apply_taper_both_pols(hp, hc, method='cycles', n_cycles=1, f_lower=f_lower, window='kaiser', delta_t=delta_t, verbose=verbose)
+            hp, hc, _ = apply_taper_both_pols(hp, hc, method='cycles', n_cycles=1, f_lower=f_lower, window='planck', delta_t=delta_t, verbose=verbose)
     if return_pycbc_timeseries:
         hp = pt.TimeSeries(hp, delta_t=delta_t, epoch=-delta_t * (len(hp)-1))
         hc = pt.TimeSeries(hc, delta_t=delta_t, epoch=-delta_t * (len(hc)-1))
@@ -1212,7 +1212,7 @@ def get_imr_esigma_waveform(
         verbose=verbose,
     )
     if condition == 1:
-        hp, hc, _ = apply_taper_both_pols(hp, hc, method='cycles', n_cycles=1, f_lower=f_lower, window='kaiser', delta_t=delta_t, verbose=verbose)
+        hp, hc, _ = apply_taper_both_pols(hp, hc, method='cycles', n_cycles=1, f_lower=f_lower, window='planck', delta_t=delta_t, verbose=verbose)
     if return_hybridization_info and return_orbital_params:
         return hp, hc, orbital_vars_dict, retval
     elif return_hybridization_info:

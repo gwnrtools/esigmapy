@@ -259,7 +259,7 @@ def apply_taper(
     fixed_duration=0.3,
     n_cycles=1,
     f_lower=1.0,
-    window="kaiser",
+    window="planck",
     beta_kaiser=8,
     delta_t=None,
     verbose=False,
@@ -413,7 +413,7 @@ def apply_taper_both_pols(
     f_lower : float
         Lowest frequency supported (Hz). Used to calculate taper width for 'cycles' method (default: 1.0)
     window : str
-        Window function: 'kaiser' or 'planck' (default: 'kaiser')
+        Window function: 'kaiser' or 'planck' (default: 'planck')
     verbose : bool
         Verbosity flag (default: False)
     delta_t : float
@@ -428,7 +428,7 @@ def apply_taper_both_pols(
     n_cycles : int
         Number of cycles for 'cycles' method (default: 1)
     window : str
-        Window function: 'kaiser' or 'planck' (default: 'kaiser')
+        Window function: 'kaiser' or 'planck' (default: 'planck')
     verbose : bool
         Verbosity flag (default: False)
     
