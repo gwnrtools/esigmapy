@@ -853,9 +853,11 @@ def get_imr_esigmasur_waveform(
         hc = pt.TimeSeries(hc, delta_t=delta_t, epoch=t_imr[0])
 
     if return_orbital_params and return_pycbc_timeseries:
-        for name in orbital_vars_dict:
-            exec(
-                f"orbital_vars_dict['{name}'] = pt.TimeSeries(orbital_vars_dict['{name}'], delta_t=delta_t, epoch=-delta_t * (len(orbital_vars_dict['{name}'])-1))"
+        for name in list(orbital_vars_dict.keys()):
+            orbital_vars_dict[name] = pt.TimeSeries(
+                orbital_vars_dict[name],
+                delta_t=delta_t,
+                epoch=-delta_t * (len(orbital_vars_dict[name]) - 1),
             )
 
     if return_pycbc_timeseries:
