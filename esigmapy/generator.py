@@ -40,7 +40,7 @@ def eccentricity_at_extremum_frequency(
 
     itime = time.perf_counter()
     retval = ls.SimInspiralESIGMADynamics(
-        mass1, mass2, spin1z, spin2z, e0, f_lower, l0, 1e-12, sample_rate, False
+        mass1, mass2, spin1z, spin2z, e0, f_lower, l0, 1e-12, sample_rate
     )
     t, x, e, l, phi, phidot, r, rdot = retval[:8]
     t.data.data *= lal.MTSUN_SI
@@ -118,7 +118,15 @@ def eccentricity_at_reference_frequency(
     """ """
     itime = time.perf_counter()
     retval = ls.SimInspiralESIGMADynamics(
-        mass1, mass2, spin1z, spin2z, e0, f_lower, l0, 1e-12, sample_rate
+        mass1,
+        mass2,
+        spin1z,
+        spin2z,
+        e0,
+        f_lower,
+        l0,
+        1e-12,
+        sample_rate,
     )
     t, x, e, l, phi, phidot, r, rdot = retval[:8]
     t.data.data *= lal.MTSUN_SI
