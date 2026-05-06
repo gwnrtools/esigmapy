@@ -195,7 +195,8 @@ def get_inspiral_esigma_modes(
                                    parameters.
                                    We require f_ref <= f_lower. f_ref = f_lower by default.
         delta_t                 -- Waveform's time grid-spacing (in s)
-        spin1z, spin2z          -- z-components of component dimensionless spins (lies in [0,1))
+        spin1z, spin2z          -- z-components of component dimensionless spins
+                                   (lies in (-1, 1))
         eccentricity            -- Initial eccentricity
         mean_anomaly            -- Mean anomaly of the periastron (in rad)
         distance                -- Luminosity distance to the binary (in Mpc)
@@ -378,12 +379,13 @@ def get_inspiral_esigma_waveform(
                                    parameters.
                                    We require f_ref <= f_lower. f_ref = f_lower by default.
         delta_t                 -- Waveform's time grid-spacing (in s)
-        spin1z, spin2z          -- z-components of component dimensionless spins (lies in [0,1))
+        spin1z, spin2z          -- z-components of component dimensionless spins
+                                   (lies in (-1, 1))
         eccentricity            -- Initial eccentricity
         mean_anomaly            -- Mean anomaly of the periastron (in rad)
         inclination             -- Inclination (in rad), defined as the angle between the orbital
                                    angular momentum L and the line-of-sight
-        coa_phase               -- Coalesence phase of the binary (in rad)
+        coa_phase               -- Coalescence phase of the binary (in rad)
         distance                -- Luminosity distance to the binary (in Mpc)
         modes_to_use            -- GW modes to use. List of tuples (l, |m|)
         return_orbital_params   -- If True, returns the orbital evolution of all the orbital elements (in
@@ -723,8 +725,8 @@ def _get_pmr_modes(
                            None by default, which means f_ref = f_lower.
         delta_t         -- Waveform's time grid-spacing (in s)
         spin1z, spin2z  -- z-components of component dimensionless
-                           spins (lies in [0,1))
-        coa_phase       -- Coalesence phase of the binary (in rad)
+                           spins (lies in (-1,1))
+        coa_phase       -- Coalescence phase of the binary (in rad)
         distance        -- Luminosity distance to the binary (in Mpc)
         modes_to_use    -- GW modes to use. List of tuples (l, |m|)
         approximant     -- Choose the plunge-merger-ringdown model.
@@ -737,8 +739,6 @@ def _get_pmr_modes(
     --------
         modes_mr_numpy  -- Dictionary of PMR GW modes (NumPy arrays)
     """
-    # Generate NR surrogate waveform that will be our merger-ringdown, starting
-    # from a frequency = 90% of
     if coa_phase is None:
         coa_phase = 0.0
     if f_ref is None:
@@ -855,10 +855,10 @@ def get_imr_esigma_modes(
                                      f_ref = f_lower by default.
         delta_t                   -- Waveform's time grid-spacing (in s)
         spin1z, spin2z            -- z-components of component dimensionless
-                                     spins (lies in [0,1))
+                                     spins (lies in (-1,1))
         eccentricity              -- Initial eccentricity
         mean_anomaly              -- Mean anomaly of the periastron (radians)
-        coa_phase                 -- Coalesence phase of the binary (in rad)
+        coa_phase                 -- Coalescence phase of the binary (in rad)
         distance                  -- Luminosity distance to the binary (in Mpc)
         modes_to_use              -- GW modes to use. List of tuples (l, |m|)
         mode_to_align_by          -- GW mode to use to align inspiral and merger
@@ -899,9 +899,10 @@ def get_imr_esigma_modes(
                                      the center of the hybridization window.
                                      Otherwise, it's kept at the end of the
                                      window (default).
-        merger_ringdown_approximant    -- Choose merger-ringdown model. Available
-                                     choices:
-                                     [NRSur7dq4, SEOBNRv4PHM, SEOBNRv5HM, SEOBNRv5PHM]
+        merger_ringdown_approximant    -- Choose merger-ringdown model.
+                                        Available choices:
+                                        NRSur7dq4, SEOBNRv4PHM  (requires `lalsimulation`)
+                                        SEOBNRv5HM, SEOBNRv5PHM (requires `pyseobnr`)
         return_hybridization_info -- If True, returns hybridization related data
         return_orbital_params     -- If True, returns the orbital evolution of
                                      all the orbital elements (in
@@ -1265,13 +1266,13 @@ def get_imr_esigma_waveform(
                                      `f_ref = f_lower` by default.
         delta_t                   -- Waveform's time grid-spacing (in s)
         spin1z, spin2z            -- z-components of component dimensionless
-                                     spins (lies in [0,1))
+                                     spins (lies in (-1,1))
         eccentricity              -- Initial eccentricity
         mean_anomaly              -- Mean anomaly of the periastron (in rad)
         inclination               -- Inclination (in rad), defined as the angle
                                      between the orbital angular momentum L and
                                      the line-of-sight
-        coa_phase                 -- Coalesence phase of the binary (in rad)
+        coa_phase                 -- Coalescence phase of the binary (in rad)
         distance                  -- Luminosity distance to the binary (in Mpc)
         modes_to_use              -- GW modes to use. List of tuples (l, |m|)
         mode_to_align_by          -- GW mode to use to align inspiral and merger
@@ -1301,9 +1302,10 @@ def get_imr_esigma_waveform(
                                      the center of the hybridization window.
                                      Otherwise, it's kept at the end of the
                                      window (default).
-        merger_ringdown_approximant    -- Choose merger-ringdown model. Available
-                                     choices:
-                                     [NRSur7dq4, SEOBNRv4PHM, SEOBNRv5HM, SEOBNRv5PHM]
+        merger_ringdown_approximant    -- Choose merger-ringdown model.
+                                    Available choices:
+                                    NRSur7dq4, SEOBNRv4PHM  (requires `lalsimulation`)
+                                    SEOBNRv5HM, SEOBNRv5PHM (requires `pyseobnr`)
         return_hybridization_info -- If True, returns hybridization related data
         return_orbital_params     -- If True, returns the orbital evolution of
                                      all the orbital elements (in

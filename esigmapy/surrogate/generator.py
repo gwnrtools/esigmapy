@@ -212,7 +212,7 @@ def get_inspiral_esigmasur_waveform(
                                    Also set `return_pycbc_timeseries=False` to use this option.
         inclination             -- Inclination (in rad), defined as the angle between
                                    the orbital angular momentum L and the line-of-sight
-        coa_phase               -- Coalesence phase of the binary (in rad)
+        coa_phase               -- Coalescence phase of the binary (in rad)
         distance                -- Luminosity distance to the binary (in Mpc)
         return_orbital_params   -- If True, returns the orbital evolution of all the
                                    orbital elements (in geometrized units). Can also be
@@ -322,7 +322,7 @@ def get_imr_esigmasur_mode(
                                      inspiral, so t_start should be negative
                                      and t_start < 0.
                                      Defaults to the full duration of the surrogate.
-        coa_phase                 -- Coalesence phase of the binary (in rad)
+        coa_phase                 -- Coalescence phase of the binary (in rad)
         distance                  -- Luminosity distance to the binary (in Mpc)
         include_conjugate_modes   -- If True, (l, -|m|) modes are included as
                                      well
@@ -356,9 +356,10 @@ def get_imr_esigmasur_mode(
                                      the center of the hybridization window.
                                      Otherwise, it's kept at the end of the
                                      window (default).
-        merger_ringdown_approximant    -- Choose merger-ringdown model. Available
-                                     choices:
-                                     [NRSur7dq4, SEOBNRv4PHM, SEOBNRv5HM, SEOBNRv5PHM]
+        merger_ringdown_approximant    -- Choose merger-ringdown model.
+                                    Available choices:
+                                    NRSur7dq4, SEOBNRv4PHM  (requires `lalsimulation`)
+                                    SEOBNRv5HM, SEOBNRv5PHM (requires `pyseobnr`)
         return_hybridization_info -- If True, returns hybridization related data
         return_orbital_params     -- If True, returns the orbital evolution of
                                      all the orbital elements (in
@@ -711,7 +712,7 @@ def get_imr_esigmasur_waveform(
                                      and t_start < 0.
                                      Defaults to the full duration of the surrogate.
         distance                  -- Luminosity distance to the binary (in Mpc)
-        coa_phase                 -- Coalesence phase of the binary (in rad)
+        coa_phase                 -- Coalescence phase of the binary (in rad)
         inclination               -- Inclination (in rad), defined as the angle
                                      between the orbital angular momentum L and
                                      the line-of-sight
@@ -745,9 +746,10 @@ def get_imr_esigmasur_waveform(
                                      the center of the hybridization window.
                                      Otherwise, it's kept at the end of the
                                      window (default).
-        merger_ringdown_approximant    -- Choose merger-ringdown model. Available
-                                     choices:
-                                     [NRSur7dq4, SEOBNRv4PHM, SEOBNRv5HM, SEOBNRv5PHM]
+        merger_ringdown_approximant    -- Choose merger-ringdown model.
+                                    Available choices:
+                                    NRSur7dq4, SEOBNRv4PHM  (requires `lalsimulation`)
+                                    SEOBNRv5HM, SEOBNRv5PHM (requires `pyseobnr`)
         return_hybridization_info -- If True, returns hybridization related data
         return_orbital_params     -- If True, returns the orbital evolution of
                                      all the orbital elements (in
