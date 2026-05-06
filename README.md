@@ -20,7 +20,7 @@ Then to use:
  * `ESIGMAHM`: requires custom `LALSuite` installation and `NRSur7dq4` surrogate data download ([installation instructions below](https://github.com/gwnrtools/esigmapy/tree/master?tab=readme-ov-file#blue_square-esigmahm)).
  * `ESIGMASur`: requires downloading `ESIGMASur` surrogate data ([installation instructions below](https://github.com/gwnrtools/esigmapy/tree/master?tab=readme-ov-file#green_square-esigmasur))
  
-Usage instructions at:
+Usage instructions:
  * `ESIGMAHM` [tutorial notebook](https://github.com/gwnrtools/esigmapy/blob/master/notebooks/ESIGMA_tutorial.ipynb)
  * `ESIGMASur` [tutorial notebook](https://github.com/gwnrtools/esigmapy/blob/master/notebooks/ESIGMASur_tutorial.ipynb)
 ***
@@ -31,7 +31,7 @@ Usage instructions at:
 * **Inspiral piece (`InspiralESIGMAHM`):** It comes from a combination of post-Newtonian theory, self-force, and black hole perturbation theory.
 * **Plunge-merger-ringdown piece**: Assuming moderate starting eccentricities that decay by the late inspiral, we use the quasi-circular (QC) NR surrogate `NRSur7dq4` for the plunge-merger-ringdown piece for `ESIGMAHM`.
   
-  (**Note:** We also allow other QC `LALSuite` waveform models to be used as the plunge-merger-ringdown piece; see the optional argument `merger_ringdown_approximant` in the generation functions `get_imr_esigma_waveform` and `get_imr_esigma_modes` [here](https://github.com/gwnrtools/esigmapy/blob/master/esigmapy/generator.py). However, the default and the most tested choice is `NRSur7dq4`.)
+  (**Note:** We also allow other QC waveform models to be used as the plunge-merger-ringdown piece; see the optional argument `merger_ringdown_approximant` in the generation functions `get_imr_esigma_waveform` and `get_imr_esigma_modes` [here](https://github.com/gwnrtools/esigmapy/blob/master/esigmapy/generator.py). The models currently supported are: `NRSur7dq4`, `SEOBNRv4PHM` (via `LALSuite`), `SEOBNRv5HM`, `SEOBNRv5PHM` (via `pyseobnr`). However, the default and the most tested choice is `NRSur7dq4`.)
 
 The full IMR waveform `ESIGMAHM` is produced by smoothly attaching the inspiral piece `InspiralESIGMAHM` to the plunge-merger-ringdown piece `NRSur7dq4`. This attachment is facilitated by `ESIGMAPy`.
 
@@ -73,8 +73,8 @@ Using `ESIGMAHM` therefore requires installing 1. `InspiralESIGMAHM`, 2. `NRSur7
 * To avoid performing the above step in every new terminal session, either add the above command to your `.bashrc` file, or follow the instructions [here](http://gitlab.icts.res.in/akash.maurya/Installation-instructions/wikis/conda-tricks), replacing `PYTHONPATH` with `LAL_DATA_PATH`, to set this environment variable automatically on activating your `conda` environment.
 
 ### Installing `ESIGMAPy`
-* Activate your `conda` environment and install `ESIGMAPy` by running: `pip install esigmapy`.
-
+* Activate your `conda` environment and install `ESIGMAPy` by running: `pip install git+https://github.com/gwnrtools/esigmapy.git`.
+* (Optional) If you want to use `SEOBNRv5HM` or `SEOBNRv5PHM` as the merger-ringdown piece in `ESIGMAHM`, install `ESIGMAPy` with `pyseobnr` option by running: `pip install "esigmapy[pyseobnr] @ git+https://github.com/gwnrtools/esigmapy.git"`
 ***
 ### Trying out `ESIGMAHM`
 The instructions to generate `ESIGMAHM` waveforms and the various functionalities that it offers are detailed in [this tutorial notebook](https://github.com/gwnrtools/esigmapy/blob/master/notebooks/ESIGMA_tutorial.ipynb). 
@@ -99,7 +99,7 @@ The instructions to generate `ESIGMAHM` waveforms and the various functionalitie
     
 * Download the surrogate data files of `ESIGMASur`, which can be found [on the repo](https://github.com/gwnrtools/esigmapy/tree/master/esigmapy/surrogate/data). Next, set the shell environment variable `ESIGMASUR_DATA_PATH` to the directory where you keep these surrogate data files by running: `export ESIGMASUR_DATA_PATH="/path/to/ESIGMASur"`.
 
-* Using the inspiral-only surrogate `InspiralESIGMASur` would not require any further dependencies. However, its hybridized IMR version `IMRESIGMASur` will require downloading the NR surrogate data file ([installation instructions above](https://github.com/gwnrtools/esigmapy/tree/master#installing-nrsur7dq4)). 
+* Using the inspiral-only surrogate `InspiralESIGMASur` would not require any further dependencies. However, its hybridized IMR version `IMRESIGMASur` will require downloading the NR surrogate data file ([installation instructions above](https://github.com/gwnrtools/esigmapy/tree/master#installing-nrsur7dq4)). Or, if you want to use `SEOBNRv5HM` or `SEOBNRv5PHM` as the merger-ringdown piece in `IMRESIGMASur`, add `pyseobnr` option during the installation: `pip install "esigmapy[surrogate,pyseobnr] @ git+https://github.com/gwnrtools/esigmapy.git"`.
 
 ### Trying out `ESIGMASur`
 The usage instructions and the various functionalities of `ESIGMASur` are detailed in [this tutorial notebook](https://github.com/gwnrtools/esigmapy/blob/master/notebooks/ESIGMASur_tutorial.ipynb).
