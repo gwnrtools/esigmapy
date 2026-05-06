@@ -723,8 +723,8 @@ def _get_pmr_modes(
                            None by default, which means f_ref = f_lower.
         delta_t         -- Waveform's time grid-spacing (in s)
         spin1z, spin2z  -- z-components of component dimensionless
-                           spins (lies in [0,1))
-        coa_phase       -- Coalesence phase of the binary (in rad)
+                           spins (lies in [-1, 1])
+        coa_phase       -- Coalescence phase of the binary (in rad)
         distance        -- Luminosity distance to the binary (in Mpc)
         modes_to_use    -- GW modes to use. List of tuples (l, |m|)
         approximant     -- Choose the plunge-merger-ringdown model.
