@@ -109,7 +109,7 @@ if __name__ == "__main__":
         author_email="prayush.kumar@gmail.com",
         packages=find_packages(),
         package_dir={NAME: NAME},
-        entry_points = {"pycbc.waveform.td":"esigma = esigmapy:pycbc_esigma"},
+        entry_points={"pycbc.waveform.td": "esigma = esigmapy:pycbc_esigma"},
         package_data={},
         install_requires=[
             # 'lalsuite>=6.63',
@@ -118,8 +118,18 @@ if __name__ == "__main__":
             "numpy",
             "pycbc",
             "scipy>=1.2.3",
-            "tpi-splines",
-            "numba",
         ],
+        extras_require={
+            "surrogate": [
+                "tpi-splines",
+                "numba",
+            ],
+            "pyseobnr": ["pyseobnr"],
+            "all": [
+                "tpi-splines",
+                "numba",
+                "pyseobnr",
+            ],
+        },
         scripts=[],
     )
