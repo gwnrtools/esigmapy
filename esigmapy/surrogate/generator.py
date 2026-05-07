@@ -13,13 +13,11 @@ import pycbc.types as pt
 from esigmapy.utils import f_ISCO_spin
 from esigmapy.generator import (
     _get_transition_frequency_window,
-    _get_mr_mode_generator,
-    _get_pmr_modes,
+    ECCENTRICITY_LEVEL_ISCO_WARNING,
+    ECCENTRICITY_LEVEL_ISCO_ERROR,
 )
+from esigmapy.mr_generator import check_available_mr_approximants, get_mr_modes
 from .surrogate import _get_surrogate
-
-ECCENTRICITY_LEVEL_ISCO_WARNING = 0.02
-ECCENTRICITY_LEVEL_ISCO_ERROR = 0.1
 
 
 def get_surrogate_object():
@@ -143,7 +141,7 @@ def get_inspiral_esigmasur_modes(
 Please set `return_pycbc_timeseries=False` if you want to provide custom time grid."""
             )
     if verbose:
-        print(f"Modes generation took: {time.perf_counter() - itime} seconds")
+        print(f"Inspiral mode generation took: {time.perf_counter() - itime} seconds")
 
     if return_orbital_params:
         orbital_var_dict = {}
@@ -391,7 +389,7 @@ def get_imr_esigmasur_mode(
     modes_to_use = [(2, 2)]
     mode_to_align_by = (2, 2)
 
-    mr_mode_generator = _get_mr_mode_generator(merger_ringdown_approximant)
+    check_available_mr_approximants(merger_ringdown_approximant)
 
     if (reference_mean_anomaly is None) and (coa_phase is None):
         raise IOError(
@@ -594,7 +592,7 @@ requested is {f_mr_transition}Hz, which should be less than the maximum freq of
         try:
             if verbose:
                 print(f"Generating MR waveform from {f_lower_mr}Hz...")
-            modes_mr_numpy = _get_pmr_modes(
+            modes_mr_numpy = get_mr_modes(
                 mass1=mass1,
                 mass2=mass2,
                 f_lower=f_lower_mr,
@@ -606,7 +604,6 @@ requested is {f_mr_transition}Hz, which should be less than the maximum freq of
                 distance=distance,
                 modes_to_use=modes_to_use,
                 approximant=merger_ringdown_approximant,
-                mr_mode_generator=mr_mode_generator,
                 verbose=verbose,
             )
             break

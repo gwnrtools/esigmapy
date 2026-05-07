@@ -11,12 +11,7 @@ import lal
 import lalsimulation as ls
 import pycbc.types as pt
 from .utils import f_ISCO_spin
-
-# Set of approximants that we support for
-# the plunge-merger-ringdown piece of ESIGMA.
-LALSIM_APPROXIMANTS = ["NRSur7dq4", "SEOBNRv4PHM"]
-PYSEOBNR_APPROXIMANTS = ["SEOBNRv5HM", "SEOBNRv5PHM"]
-SUPPORTED_MR_APPROXIMANTS = PYSEOBNR_APPROXIMANTS + LALSIM_APPROXIMANTS
+from .mr_generator import check_available_mr_approximants, get_mr_modes
 
 ECCENTRICITY_LEVEL_ISCO_WARNING = 0.02
 ECCENTRICITY_LEVEL_ISCO_ERROR = 0.1
@@ -51,7 +46,7 @@ def eccentricity_at_extremum_frequency(
     t.data.data *= lal.MTSUN_SI
 
     if verbose:
-        print(f"Orbital evolution took: {time.perf_counter() - itime} seconds")
+        print(f"Inspiral orbital evolution took: {time.perf_counter() - itime} seconds")
 
     omega = pt.TimeSeries(phidot.data.data, delta_t=t.data.data[1] - t.data.data[0])
     if extremum == "periastron":
@@ -137,7 +132,7 @@ def eccentricity_at_reference_frequency(
     t.data.data *= lal.MTSUN_SI
 
     if verbose:
-        print(f"Orbital evolution took: {time.perf_counter() - itime} seconds")
+        print(f"Inspiral orbital evolution took: {time.perf_counter() - itime} seconds")
 
     x_reference = (np.pi * (mass1 + mass2) * lal.MTSUN_SI * f_reference) ** (2.0 / 3.0)
 
@@ -285,7 +280,7 @@ def get_inspiral_esigma_modes(
     ) * lal.MTSUN_SI  # Time from geometrized units to seconds
 
     if verbose:
-        print(f"Orbital evolution took: {time.perf_counter() - itime} seconds")
+        print(f"Inspiral orbital evolution took: {time.perf_counter() - itime} seconds")
 
     # Include conjugate modes in the mode list
     if include_conjugate_modes:
@@ -326,7 +321,7 @@ def get_inspiral_esigma_modes(
         modes = {k: np.asarray(modes[k].data.data) for k in modes}
 
     if verbose:
-        print(f"Modes generation took: {time.perf_counter() - itime} seconds")
+        print(f"Inspiral modes generation took: {time.perf_counter() - itime} seconds")
 
     if return_orbital_params:
         orbital_var_dict = {}
@@ -654,166 +649,6 @@ inspiral-to-merger transition frequency. `window_start_idx` is None."""
     return f_window_mr_transition
 
 
-# Global variable to hold the merger-ringdown mode generator.
-# We do this to avoid importing all the merger-ringdown libraries
-# at the top level, as they are expected to be optional dependencies
-# of the package.
-_mr_generator_cache = {}
-
-
-def _get_mr_mode_generator(approximant):
-    global _mr_generator_cache
-    if approximant in _mr_generator_cache:
-        return _mr_generator_cache[approximant]
-
-    if approximant not in SUPPORTED_MR_APPROXIMANTS:
-        raise IOError(
-            f"We cannot generate individual modes for {approximant}. "
-            f"Try one of: {SUPPORTED_MR_APPROXIMANTS}."
-        )
-
-    if approximant in LALSIM_APPROXIMANTS:
-        if not hasattr(ls, approximant):
-            raise IOError(
-                f"{approximant} is not available in your lalsimulation installation."
-            )
-        _mr_generator_cache[approximant] = ls.SimInspiralChooseTDModes
-
-    elif approximant in PYSEOBNR_APPROXIMANTS:
-        try:
-            from pyseobnr.generate_waveform import GenerateWaveform
-
-            _mr_generator_cache[approximant] = GenerateWaveform
-        except ImportError:
-            raise IOError(f"{approximant} requires pyseobnr, which is not installed.")
-
-    # For using waveform from some future library, follow the pattern:
-    # elif approximant in SOME_OTHER_APPROXIMANTS:
-    #     from somelibrary import SomeGenerator
-    #     _mr_generator_cache[approximant] = SomeGenerator
-
-    return _mr_generator_cache[approximant]
-
-
-def _get_pmr_modes(
-    mass1,
-    mass2,
-    f_lower,
-    delta_t,
-    spin1z=0.0,
-    spin2z=0.0,
-    coa_phase=None,
-    distance=1.0,
-    f_ref=None,
-    modes_to_use=[(2, 2), (3, 3), (4, 4)],
-    approximant="NRSur7dq4",
-    mr_mode_generator=ls.SimInspiralChooseTDModes,
-    verbose=False,
-):
-    """
-    Returns quasi-circular IMR GW modes to be used as the
-    plunge-merger-ringdown (PMR) piece of ESIGMA.
-    Available approximants are:
-    NRSur7dq4, SEOBNRv4PHM, SEOBNRv5HM, SEOBNRv5PHM
-
-    Parameters:
-    -----------
-        mass1, mass2    -- Binary's component masses (in solar masses)
-        f_lower         -- Starting frequency of the waveform (in Hz)
-        f_ref           -- Reference frequency at which to define the
-                           waveform parameters.
-                           None by default, which means f_ref = f_lower.
-        delta_t         -- Waveform's time grid-spacing (in s)
-        spin1z, spin2z  -- z-components of component dimensionless
-                           spins (lies in (-1,1))
-        coa_phase       -- Coalescence phase of the binary (in rad)
-        distance        -- Luminosity distance to the binary (in Mpc)
-        modes_to_use    -- GW modes to use. List of tuples (l, |m|)
-        approximant     -- Choose the plunge-merger-ringdown model.
-                           Available choices:
-                           NRSur7dq4, SEOBNRv4PHM  (requires `lalsimulation`)
-                           SEOBNRv5HM, SEOBNRv5PHM (requires `pyseobnr`)
-        mr_mode_generator -- Generator function for the merger-ringdown modes.
-        verbose         -- Verbosity level
-    Returns:
-    --------
-        modes_mr_numpy  -- Dictionary of PMR GW modes (NumPy arrays)
-    """
-    if coa_phase is None:
-        coa_phase = 0.0
-    if f_ref is None:
-        f_ref = f_lower
-
-    if approximant in LALSIM_APPROXIMANTS:
-        hlm_mr = mr_mode_generator(
-            coa_phase,  # phiRef
-            delta_t,  # deltaT
-            mass1 * lal.MSUN_SI,
-            mass2 * lal.MSUN_SI,
-            0,  # spin1x
-            0,  # spin1y
-            spin1z,
-            0,  # spin2x
-            0,  # spin2y
-            spin2z,
-            f_lower,  # f_min
-            f_ref,  # f_ref
-            distance * lal.PC_SI * 1.0e6,
-            None,  # LALpars
-            4,  # lmax
-            getattr(ls, approximant),
-        )
-        if verbose:
-            print(f"Used {approximant} as PMR via lalsimulation.")
-
-        # Extracting only the modes we need
-        modes_mr_numpy = {}
-        while hlm_mr is not None:
-            key = (hlm_mr.l, hlm_mr.m)
-            if key in modes_to_use:
-                modes_mr_numpy[key] = hlm_mr.mode.data.data
-            hlm_mr = hlm_mr.next
-
-    elif approximant in PYSEOBNR_APPROXIMANTS:
-        if mr_mode_generator is None:
-            from pyseobnr.generate_waveform import GenerateWaveform
-
-            mr_mode_generator = GenerateWaveform
-
-        # Converting to all +ve m modes to be compatible with pyseobnr
-        # pyseobnr outputs all the modes, including the negative m modes
-        mode_array = list({(l, abs(m)) for l, m in modes_to_use})
-        wfm_gen = mr_mode_generator(
-            dict(
-                mass1=mass1,  # in solar masses
-                mass2=mass2,
-                spin1z=spin1z,
-                spin2z=spin2z,
-                distance=distance,  # in Mpc
-                phi_ref=coa_phase,
-                deltaT=delta_t,
-                f22_start=f_lower,
-                f_ref=f_ref,
-                mode_array=mode_array,
-                approximant=approximant,
-            )
-        )
-        # Generate mode dictionary
-        _, hlm = wfm_gen.generate_td_modes()
-        if verbose:
-            print(f"Used {approximant} as PMR via pyseobnr.")
-
-        # Extracting only the modes we need
-        modes_mr_numpy = {key: hlm[key] for key in modes_to_use}
-
-    else:
-        raise ValueError(
-            f"""Invalid choice of approximant for plunge-merger-ringdown: {approximant}.
-Available choices are: {SUPPORTED_MR_APPROXIMANTS}."""
-        )
-    return modes_mr_numpy
-
-
 def get_imr_esigma_modes(
     mass1,
     mass2,
@@ -927,8 +762,7 @@ def get_imr_esigma_modes(
         retval            -- Hybridization related data. Returned only if the
                              flag `return_hybridization_info` is set
     """
-    mr_mode_generator = _get_mr_mode_generator(merger_ringdown_approximant)
-
+    check_available_mr_approximants(merger_ringdown_approximant)
     if (mean_anomaly is None) and (coa_phase is None):
         raise IOError(
             f"""Please specify one of the phase angles, either of
@@ -1143,7 +977,7 @@ requested is {f_mr_transition}Hz, which should be less than the maximum freq of
         try:
             if verbose:
                 print(f"Generating MR waveform from {f_lower_mr}Hz...")
-            modes_mr_numpy = _get_pmr_modes(
+            modes_mr_numpy = get_mr_modes(
                 mass1=mass1,
                 mass2=mass2,
                 f_lower=f_lower_mr,
@@ -1155,7 +989,6 @@ requested is {f_mr_transition}Hz, which should be less than the maximum freq of
                 distance=distance,
                 modes_to_use=modes_to_use,
                 approximant=merger_ringdown_approximant,
-                mr_mode_generator=mr_mode_generator,
                 verbose=verbose,
             )
             break
