@@ -11,11 +11,13 @@ import lal
 import lalsimulation as ls
 import pycbc.types as pt
 from esigmapy.utils import f_ISCO_spin
-from esigmapy.generator import _get_transition_frequency_window
+from esigmapy.generator import (
+    _get_transition_frequency_window,
+    ECCENTRICITY_LEVEL_ISCO_WARNING,
+    ECCENTRICITY_LEVEL_ISCO_ERROR,
+)
+from esigmapy.mr_generator import check_available_mr_approximants, get_mr_modes
 from .surrogate import _get_surrogate
-
-ECCENTRICITY_LEVEL_ISCO_WARNING = 0.02
-ECCENTRICITY_LEVEL_ISCO_ERROR = 0.1
 
 
 def get_surrogate_object():
@@ -139,7 +141,7 @@ def get_inspiral_esigmasur_modes(
 Please set `return_pycbc_timeseries=False` if you want to provide custom time grid."""
             )
     if verbose:
-        print(f"Modes generation took: {time.perf_counter() - itime} seconds")
+        print(f"Inspiral mode generation took: {time.perf_counter() - itime} seconds")
 
     if return_orbital_params:
         orbital_var_dict = {}
@@ -208,7 +210,7 @@ def get_inspiral_esigmasur_waveform(
                                    Also set `return_pycbc_timeseries=False` to use this option.
         inclination             -- Inclination (in rad), defined as the angle between
                                    the orbital angular momentum L and the line-of-sight
-        coa_phase               -- Coalesence phase of the binary (in rad)
+        coa_phase               -- Coalescence phase of the binary (in rad)
         distance                -- Luminosity distance to the binary (in Mpc)
         return_orbital_params   -- If True, returns the orbital evolution of all the
                                    orbital elements (in geometrized units). Can also be
@@ -305,7 +307,7 @@ def get_imr_esigmasur_mode(
 ):
     """
     Returns IMR GW modes constructed using ESIGMASur for inspiral and
-    NRSur7dq4/SEOBNRv4PHM for merger-ringdown
+    NRSur7dq4/SEOBNRv4PHM/SEOBNRv5HM/SEOBNRv5PHM for merger-ringdown
 
     Parameters:
     -----------
@@ -318,7 +320,7 @@ def get_imr_esigmasur_mode(
                                      inspiral, so t_start should be negative
                                      and t_start < 0.
                                      Defaults to the full duration of the surrogate.
-        coa_phase                 -- Coalesence phase of the binary (in rad)
+        coa_phase                 -- Coalescence phase of the binary (in rad)
         distance                  -- Luminosity distance to the binary (in Mpc)
         include_conjugate_modes   -- If True, (l, -|m|) modes are included as
                                      well
@@ -352,8 +354,10 @@ def get_imr_esigmasur_mode(
                                      the center of the hybridization window.
                                      Otherwise, it's kept at the end of the
                                      window (default).
-        merger_ringdown_approximant    -- Choose merger-ringdown model. Tested
-                                     choices: [NRSur7dq4, SEOBNRv4PHM]
+        merger_ringdown_approximant    -- Choose merger-ringdown model.
+                                    Available choices:
+                                    NRSur7dq4, SEOBNRv4PHM  (requires `lalsimulation`)
+                                    SEOBNRv5HM, SEOBNRv5PHM (requires `pyseobnr`)
         return_hybridization_info -- If True, returns hybridization related data
         return_orbital_params     -- If True, returns the orbital evolution of
                                      all the orbital elements (in
@@ -385,11 +389,8 @@ def get_imr_esigmasur_mode(
     modes_to_use = [(2, 2)]
     mode_to_align_by = (2, 2)
 
-    if not hasattr(ls, merger_ringdown_approximant):
-        raise IOError(
-            """We cannot generate individual modes for {merger_ringdown_approximant}.
-Try one of: [NRSur7dq4, SEOBNRv4PHM]"""
-        )
+    check_available_mr_approximants(merger_ringdown_approximant)
+
     if (reference_mean_anomaly is None) and (coa_phase is None):
         raise IOError(
             f"""Please specify one of the phase angles, either of `reference_mean_anomaly` or `coa_phase`."""
@@ -586,42 +587,36 @@ requested is {f_mr_transition}Hz, which should be less than the maximum freq of
     f_lower_mr = (f_mr_transition - f_window_mr_transition / 2) * (
         1.8 / mode_to_align_by_em
     )
+    modes_to_use = list(modes_inspiral_numpy.keys())
     for _ in range(max_retries):
         try:
             if verbose:
                 print(f"Generating MR waveform from {f_lower_mr}Hz...")
-            hlm_mr = ls.SimInspiralChooseTDModes(
-                coa_phase,  # phiRef
-                delta_t,  # deltaT
-                mass1 * lal.MSUN_SI,
-                mass2 * lal.MSUN_SI,
-                0,  # spin1x
-                0,  # spin1y
-                spin1z,
-                0,  # spin2x
-                0,  # spin2y
-                spin2z,
-                f_lower_mr,  # f_min
-                f_lower_mr,  # f_ref
-                distance * lal.PC_SI * 1.0e6,
-                None,  # LALpars
-                4,  # lmax
-                getattr(ls, merger_ringdown_approximant),
+            modes_mr_numpy = get_mr_modes(
+                mass1=mass1,
+                mass2=mass2,
+                f_lower=f_lower_mr,
+                f_ref=f_lower_mr,
+                delta_t=delta_t,
+                spin1z=spin1z,
+                spin2z=spin2z,
+                coa_phase=coa_phase,
+                distance=distance,
+                modes_to_use=modes_to_use,
+                approximant=merger_ringdown_approximant,
+                verbose=verbose,
             )
             break
         except:
             f_lower_mr *= 0.8
             continue
-
-    # Extracting only the modes we need
-    modes_to_use = list(modes_inspiral_numpy.keys())
-    modes_mr_numpy = {}
-    while hlm_mr is not None:
-        key = (hlm_mr.l, hlm_mr.m)
-        if key in modes_to_use:
-            modes_mr_numpy[key] = hlm_mr.mode.data.data
-        hlm_mr = hlm_mr.next
-
+    # else clause in a for-else block executes only if the
+    # for-loop is not terminated by a break statement
+    else:
+        raise RuntimeError(
+            f"""Failed to generate merger-ringdown waveform after {max_retries} retries.
+Last f_lower tried: {f_lower_mr/0.8:.4f}Hz."""
+        )
     try:
         retval = esigmapy.blend.blend_modes(
             modes_inspiral_numpy,
@@ -714,7 +709,7 @@ def get_imr_esigmasur_waveform(
                                      and t_start < 0.
                                      Defaults to the full duration of the surrogate.
         distance                  -- Luminosity distance to the binary (in Mpc)
-        coa_phase                 -- Coalesence phase of the binary (in rad)
+        coa_phase                 -- Coalescence phase of the binary (in rad)
         inclination               -- Inclination (in rad), defined as the angle
                                      between the orbital angular momentum L and
                                      the line-of-sight
@@ -748,8 +743,10 @@ def get_imr_esigmasur_waveform(
                                      the center of the hybridization window.
                                      Otherwise, it's kept at the end of the
                                      window (default).
-        merger_ringdown_approximant    -- Choose merger-ringdown model. Tested
-                                     choices: [NRSur7dq4, SEOBNRv4PHM]
+        merger_ringdown_approximant    -- Choose merger-ringdown model.
+                                    Available choices:
+                                    NRSur7dq4, SEOBNRv4PHM  (requires `lalsimulation`)
+                                    SEOBNRv5HM, SEOBNRv5PHM (requires `pyseobnr`)
         return_hybridization_info -- If True, returns hybridization related data
         return_orbital_params     -- If True, returns the orbital evolution of
                                      all the orbital elements (in
