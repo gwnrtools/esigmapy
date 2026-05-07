@@ -41,12 +41,12 @@ Using `ESIGMAHM` therefore requires installing 1. `InspiralESIGMAHM`, 2. `NRSur7
 
 * **Getting the source code:** The `LALSuite` fork containing the implementation of `InspiralESIGMAHM` is currently private, but interested users are welcome to write to the developers for access at esigmahm@icts.res.in. 
 
-  Clone the [`LALSuite` fork](https://git.ligo.org/kaushik.paul/lalsuite/-/tree/enigma_spins_v2023?ref_type=heads) and checkout the commit with tag `ESIGMAHMv1`:
+  Clone the [`LALSuite` fork](https://git.ligo.org/esigma/lalsuite) and checkout its `esigma_dev` branch:
 
   ```bash
-  git clone https://git.ligo.org/kaushik.paul/lalsuite.git
+  git clone https://git.ligo.org/esigma/lalsuite.git
   cd lalsuite
-  git checkout ESIGMAHMv1
+  git checkout esigma_dev
   ``` 
 * **Installation:**
   - It is advised to create a conda environment using [the `igwn` yaml file](https://computing.docs.ligo.org/conda/environments/igwn-py311/) and install the above mentioned fork of `LALSuite` inside it to minimize the dependency issues. Please remove `_x86_64-microarch-level=3=3_haswell` from the yaml file in case you get errors related to microarchitecture mismatch.  
