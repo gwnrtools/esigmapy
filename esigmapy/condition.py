@@ -144,7 +144,8 @@ def compute_taper_width(waveform, method="cycles", fixed_duration=0.3, n_cycles=
         'cycles': Based on number of GW cycles at start (default)
         'fixed_time': Fixed time duration in seconds
     fixed_duration : float
-        Fixed duration in seconds for 'fixed_time' method (default: 0.3)
+        Fixed duration in seconds for 'fixed_time' method (default: 0.3). If this is longer 
+        than 10% of the signal duration, we cap the window width to 10%.
     n_cycles : int
         Number of cycles for 'cycles' method (default: 1)
     f_lower : float
@@ -205,8 +206,13 @@ def compute_taper_width(waveform, method="cycles", fixed_duration=0.3, n_cycles=
     elif method == "fixed_time":
         # Cap at 10% of the waveform length; take the smaller of that and
         # the user-specified fixed_duration (both expressed in samples)
+        if int(fixed_duration / delta_t) > int(len(data) * 0.1):
+            warnings.warn(
+                "Requested tapering window width exceeds 10% of the waveform duration. "
+                "Capping it to 10%.",
+                UserWarning
+            )  
         taper_width = min(int(fixed_duration / delta_t), int(len(data) * 0.1))
-
     else:
         raise ValueError(f"Unknown method: '{method}'. Use 'cycles' or 'fixed_time'")
 
