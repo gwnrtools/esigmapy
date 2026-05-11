@@ -363,7 +363,7 @@ def get_inspiral_esigma_waveform(
     return_orbital_params=False,
     return_pycbc_timeseries=True,
     verbose=False,
-    condition=0,
+    condition=False,
     **kwargs,
 ):
     """
@@ -393,9 +393,9 @@ def get_inspiral_esigma_waveform(
         return_pycbc_timeseries -- If True, returns data in the form of PyCBC timeseries.
                                    True by default
         verbose                 -- Verbosity level. Available values are: 0, 1, 2
-        condition               -- If 1, applies a tapering to the start of the
+        condition               -- If True, applies a tapering to the start of the
                                    waveform to mitigate any potential startup transients.
-                                   Default is 0 (no tapering).
+                                   Default is False (no tapering).
 
     Returns:
     --------
@@ -435,7 +435,7 @@ def get_inspiral_esigma_waveform(
         coa_phase=np.pi / 2 - coa_phase,
         verbose=verbose,
     )
-    if condition == 1:
+    if condition:
             hp, hc, _ = apply_taper_both_pols(hp, hc, method='cycles', n_cycles=1, f_lower=f_lower, window='planck', delta_t=delta_t, verbose=verbose)
     if return_pycbc_timeseries:
         hp = pt.TimeSeries(hp, delta_t=delta_t, epoch=-delta_t * (len(hp)-1))
@@ -1092,7 +1092,7 @@ def get_imr_esigma_waveform(
     return_orbital_params=False,
     failsafe=True,
     verbose=False,
-    condition=0,
+    condition=False,
     **kwargs,
 ):
     """
@@ -1162,9 +1162,9 @@ def get_imr_esigma_waveform(
                                      user, if the inputs to this method lead
                                      into exceptions.
         verbose                   -- Verbosity level. Available values are: 0, 1, 2
-        condition                 -- If 1, applies a tapering to the start of the
+        condition                 -- If True, applies a tapering to the start of the
                                     waveform to mitigate any potential startup transients.
-                                    Default is 0 (no tapering).
+                                    Default is False (no tapering).
 
     Returns:
     --------
@@ -1217,7 +1217,7 @@ def get_imr_esigma_waveform(
         coa_phase=np.pi / 2 - coa_phase,
         verbose=verbose,
     )
-    if condition == 1:
+    if condition:
         hp, hc, _ = apply_taper_both_pols(hp, hc, method='cycles', n_cycles=1, f_lower=f_lower, window='planck', delta_t=delta_t, verbose=verbose)
     if return_hybridization_info and return_orbital_params:
         return hp, hc, orbital_vars_dict, retval
