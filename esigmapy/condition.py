@@ -1,6 +1,7 @@
 # Copyright (C) 2026 Kaushik Paul, Akash Maurya
 #
 import numpy as np
+import warnings
 from numba import njit
 from scipy.signal import find_peaks
 from .utils import extract_waveform_info
@@ -196,7 +197,6 @@ def compute_taper_width(waveform, method="cycles", fixed_duration=0.3, n_cycles=
             taper_width = int(extrema[n_extrema_needed - 1] - extrema[0])
         else:
             # Fallback to fixed time
-            import warnings
             warnings.warn(
                 f"Not enough extrema found ({len(extrema)} < {n_extrema_needed}). "
                 f"Falling back to fixed_duration={fixed_duration}s"
