@@ -333,7 +333,7 @@ def get_inspiral_esigma_modes(
         if return_pycbc_timeseries:
             for name in return_orbital_params:
                 exec(
-                    f"orbital_var_dict['{name}'] = pt.TimeSeries({name}.data.data, delta_t=delta_t, epoch=-delta_t * len({name}.data.data))"
+                    f"orbital_var_dict['{name}'] = pt.TimeSeries({name}.data.data, delta_t=delta_t, epoch=-delta_t * (len({name}.data.data)-1))"
                 )
             return orbital_var_dict, modes
 
