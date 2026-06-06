@@ -1,45 +1,37 @@
-# Copyright (C) 2023 Kartikey Sharma, Prayush Kumar
+# Copyright (C) 2023 Kartikey Sharma, Prayush Kumar, Akash Maurya
 #
 """Master function to hybridise any complex timeseries using the 'frequency' as a user input,
 specifically to be used for gravitational waveform hybridisation, fine-tuned for a single mode.
 """
 
 import numpy as np
-import scipy.optimize
 from scipy.integrate import cumulative_trapezoid
 
 
+# Akash: Can use @njit here, but numba is not a dependency of default ESIGMAPy currently
 def find_first_value_location_in_series(frq_timeseries, frq_desired):
     if frq_desired < np.min(frq_timeseries):
         raise Exception("Desired frequency out of bounds, lower than min frequency")
 
     if frq_desired > np.max(frq_timeseries):
         raise Exception("Desired frequency out of bounds, higher than max frequency")
+
     """ 
-        We reverse the array and traverse it to find the location where the i_th value is more than
-        the desired value while the i+1_th value is less, hence locating the desired value somewhere
-        between those two points. We then choose the value closer to the value desired (among i and i+1) 
-        and call it the location of the desired value. 
+    We traverse the array to find the location where the i_th value is less than
+    the desired value while the i+1_th value is more, hence locating the desired 
+    value somewhere between those two points. We then choose the value closer to 
+    the value desired (among i and i+1) and call it the location of the desired value. 
     """
-
-    for idx, f_value in enumerate(frq_timeseries):
-        if idx != len(frq_timeseries) - 1:
-            if (
-                frq_timeseries[idx] <= frq_desired
-                and frq_timeseries[idx + 1] >= frq_desired
-            ):
-                fr1 = frq_timeseries[idx]
-                fr2 = frq_timeseries[idx + 1]
-
-                # If equidistant, <= ensures we select the earlier index (idx)
-                if abs(frq_desired - fr1) <= abs(frq_desired - fr2):
-                    final_idx = idx
-                else:
-                    final_idx = idx + 1
-                break
-    return final_idx
+    for idx in range(len(frq_timeseries) - 1):
+        if frq_timeseries[idx] <= frq_desired <= frq_timeseries[idx + 1]:
+            fr1 = frq_timeseries[idx]
+            fr2 = frq_timeseries[idx + 1]
+            # If equidistant, <= ensures we select the earlier index (idx)
+            return idx if abs(frq_desired - fr1) <= abs(frq_desired - fr2) else idx + 1
+    raise ValueError("frq_desired not found in frq_timeseries")
 
 
+# Akash: Can use @njit here, but numba is not a dependency of default ESIGMAPy currently
 def find_last_value_location_in_series(frq_timeseries, frq_desired):
     if frq_desired < np.min(frq_timeseries):
         raise Exception(
@@ -50,118 +42,67 @@ def find_last_value_location_in_series(frq_timeseries, frq_desired):
         raise Exception(
             f"""Desired value {frq_desired} out of bounds, higher than max value {np.max(frq_timeseries)}"""
         )
+
     """ 
-        We reverse the array and traverse it to find the location where the i_th value is more than
-        the desired value while the i+1_th value is less, hence locating the desired value somewhere
-        between those two points. We then choose the value closer to the value desired (among i and i+1) 
-        and call it the location of the desired value. 
+    We reverse the array and traverse it to find the location where the i_th value is more than
+    the desired value while the i+1_th value is less, hence locating the desired value somewhere
+    between those two points. We then choose the value closer to the value desired (among i and i+1) 
+    and call it the location of the desired value. 
     """
-
     reversed_freq_timeseries = frq_timeseries[::-1]
-    final_idx = len(reversed_freq_timeseries) - 1
+    final_idx = None
 
-    for idx, f_value in enumerate(reversed_freq_timeseries):
-        if idx != len(reversed_freq_timeseries) - 1:
-            if (
-                reversed_freq_timeseries[idx] >= frq_desired
-                and reversed_freq_timeseries[idx + 1] <= frq_desired
-            ):
-                fr1 = reversed_freq_timeseries[idx]
-                fr2 = reversed_freq_timeseries[idx + 1]
-
-                if abs(frq_desired - fr1) <= abs(frq_desired - fr2):
-                    final_idx = idx
-                else:
-                    final_idx = idx + 1
-                break
+    for idx in range(len(reversed_freq_timeseries) - 1):
+        # This assumes that the frequency is monotonically increasing with time,
+        # which is true only for orbit-averaged frequency for eccentric waveforms
+        if (
+            reversed_freq_timeseries[idx]
+            >= frq_desired
+            >= reversed_freq_timeseries[idx + 1]
+        ):
+            fr1 = reversed_freq_timeseries[idx]
+            fr2 = reversed_freq_timeseries[idx + 1]
+            final_idx = (
+                idx if abs(frq_desired - fr1) <= abs(frq_desired - fr2) else idx + 1
+            )
+            break
+    if final_idx is None:
+        raise ValueError("frq_desired not found in frq_timeseries")
     return len(frq_timeseries) - 1 - final_idx
 
 
-def mismatch_discrete(w1, w2, sample_indices_insp, sample_indices_mr):
-    w1_d = w1[sample_indices_insp]
-    w2_d = w2[sample_indices_mr]  # can't give the same comb to w2
-    w2sq = np.square(np.abs(w2_d))
-    # w1sq = np.square(np.abs(w2_d)) # another normalising factor can be (w1sq + w2sq) / 2
-    diff = np.abs(w1_d - w2_d)
-    diffsq = np.square(diff)
-    mm = 0.5 * (np.sum(diffsq) / np.sum(w2sq))
-    return mm
-
-
-def align_in_phase(
-    inspiral,
-    merger_ringdown,
-    sample_indices_insp,
-    sample_indices_mr,
-    t1_index_insp,
-    t2_index_insp,
-    t1_index_mr,
-    t2_index_mr,
-    m_mode=2,
-    align_merger_to_inspiral=True,
-):
-    if len(inspiral) == 0:
-        raise IOError(f"""You passed an inspiral waveform of zero length, to align
-                      with merger-ringdown!""")
-    if (t2_index_insp + 1 - t1_index_insp) < 1:
-        raise IOError(f"""You have passed a very narrow window for the inspiral
-                      waveform's hybridization. As per your input, the inspiral
-                      waveform from index {t1_index_insp} to {t2_index_insp + 1}
-                      should be used to attach merger-ringdown""")
-
-    # Function alignes the two waveforms using the phase, optimised over the attachment region
-    # m from l,m mode
-    def optfn_ph(phaseshift_correction):
-        if align_merger_to_inspiral:
-            phase_corrected_inspiral = inspiral
-            phase_corrected_merger_ringdown = merger_ringdown * np.exp(
-                1j * m_mode * phaseshift_correction
-            )
-        else:
-            phase_corrected_inspiral = inspiral * np.exp(
-                1j * m_mode * phaseshift_correction
-            )
-            phase_corrected_merger_ringdown = merger_ringdown
-        m_d = mismatch_discrete(
-            phase_corrected_inspiral[t1_index_insp : t2_index_insp + 1],
-            phase_corrected_merger_ringdown[t1_index_mr : t2_index_mr + 1],
-            sample_indices_insp,
-            sample_indices_mr,
-        )
-        return m_d
-
-    phase_optimizer = scipy.optimize.minimize(optfn_ph, 0)
-    phaseshift_required_for_alignment = phase_optimizer.x
-
-    if align_merger_to_inspiral:
-        aligned = merger_ringdown * np.exp(
-            1j * m_mode * phaseshift_required_for_alignment
-        )
-        return (inspiral, aligned, phaseshift_required_for_alignment)
-    else:
-        aligned = inspiral * np.exp(1j * m_mode * phaseshift_required_for_alignment)
-        return (aligned, merger_ringdown, phaseshift_required_for_alignment)
-
-
 def blend_series(x1, x2, t1_index_insp, t2_index_insp, t1_index_mr, t2_index_mr):
-    assert (
-        t1_index_mr - t2_index_mr == t1_index_insp - t2_index_insp
-    ), "Inconsistent indices passed to blending function"
+    """
+    Function to blend two series x1 and x2 over the window defined by t1_index_insp, t2_index_insp for x1 and t1_index_mr, t2_index_mr for x2.
+
+    Both indices are assumed to be inclusive, i.e. the blending window includes the values at
+    t1_index_insp and t2_index_insp for x1 and t1_index_mr and t2_index_mr for x2. Therefore,
+    x1 should have data in x1[t1_index_insp:t2_index_insp+1] and x2 should have data in x2[t1_index_mr:t2_index_mr+1].
+    The blended series is then given by (1 - tau) * x1 + tau * x2, where tau is the blending function,
+    and tau = 0 at t1_index_insp and tau = 1 at t2_index_insp, with a smooth transition in between.
+    """
+
+    insp_index_range = t2_index_insp - t1_index_insp
+    mr_index_range = t2_index_mr - t1_index_mr
+
+    if insp_index_range <= 0 or mr_index_range <= 0:
+        raise ValueError(
+            "Invalid index range for blending. Ensure that t2_index > t1_index for both inspiral and merger-ringdown."
+        )
+
+    if insp_index_range != mr_index_range:
+        raise ValueError("Inconsistent indices passed to blending function")
 
     # blending fn is an array
-    blfn_var = np.arange(t1_index_insp, t2_index_insp)
+    blfn_var = np.arange(
+        t1_index_insp, t2_index_insp + 1
+    )  # +1 since the window is inclusive of t2_index_insp
     tau = np.square(
-        (
-            np.sin(
-                (np.pi / 2)
-                * (blfn_var - t1_index_insp)
-                / (t2_index_insp - t1_index_insp)
-            )
-        )
+        (np.sin((np.pi / 2) * (blfn_var - t1_index_insp) / insp_index_range))
     )
 
-    x_hyb = (1 - tau) * x1[t1_index_insp:t2_index_insp] + tau * x2[
-        t1_index_mr:t2_index_mr
+    x_hyb = (1 - tau) * x1[t1_index_insp : t2_index_insp + 1] + tau * x2[
+        t1_index_mr : t2_index_mr + 1
     ]
     return x_hyb
 
@@ -188,7 +129,6 @@ def blend_modes(
     frq_attach,
     frq_width=10.0,
     delta_t=1.0 / 4096,
-    no_sp=8,
     modes_to_blend=[(2, 2), (3, 3), (4, 4)],
     mode_to_align_by=(2, 2),
     blend_using_avg_orbital_frequency=True,
@@ -207,21 +147,30 @@ def blend_modes(
         Dictionary indexed by (l, m) containing numpy-like arrays of
         complex-valued mode timeseries.
 
+    inspiral_orbital_frequency: 1D NumPy array
+        Orbit-averaged orbital frequency timeseries corresponding to
+        the inspiral. To be used for finding hybridization window in
+        time if `blend_using_avg_orbital_frequency` is set to True.
+        Should be a NumPy array of the same length as the inspiral modes.
     frq_attach: float
         Frequency (Hz) at which to align the inspiral and merger-ringdown modes.
+        This is understood to be the frequency corresponding to `mode_to_align_by`
+        (see below).
     frq_width: {10.0, float}
         Frequency (Hz) window around the central attachment frequency over which
         hybridization of modes is performed.
+        This is understood to be the frequency width in terms of the frequency of
+        `mode_to_align_by` (see below).
     delta_t: {1/4096, float}
-        Sample rate for timeseries (Hz)
-    no_sp: {8, int}
+        time grid-spacing for timeseries (in seconds)
 
     modes_to_blend: {[(2, 2), (3, 3), (4, 4)], list}
         List of modes as tuples of (l, m) values to blend
     mode_to_align_by: {(2, 2), tuple}
         One specific mode (l, m) value that is to be treated as baseline for
-        time/phase alignment. We recommend using only the (2, 2) mode for this.
-    blend_using_avg_orbital_frequency: (False, bool)
+        time/phase alignment. Should be a +ve m mode.
+        We recommend using only the (2, 2) mode for this.
+    blend_using_avg_orbital_frequency: (True, bool)
         Flag that enables use of orbit averaged orbital frequency for all
         calculations of inspiral to merger-ringdown attachment
     blend_aligning_merger_to_inspiral: (True, bool)
@@ -230,7 +179,7 @@ def blend_modes(
         False, the inspiral portion is phase shifted instead
     include_conjugate_modes: {True, bool}
         When set to True, we also consider (l, -m) modes in addition to (l, m) ones.
-    verbose: {True, bool}
+    verbose: {False, bool}
         Set this to True to enable logging output.
     """
     if frq_width <= 0:
@@ -272,29 +221,6 @@ def blend_modes(
             )
         )
 
-    # Get amplitude and phase for all modes
-    phase_insp = {}
-    frq_insp = {}
-    phase_mr = {}
-    frq_mr = {}
-
-    for el, em in modes_to_blend:
-        phase_insp[(el, em)] = compute_phase(inspiral_modes[(el, em)])
-        frq_insp[(el, em)] = compute_frequency(phase_insp[(el, em)], delta_t)
-
-        phase_mr[(el, em)] = compute_phase(merger_ringdown_modes[(el, em)])
-        frq_mr[(el, em)] = compute_frequency(phase_mr[(el, em)], delta_t)
-
-        if verbose:
-            print(
-                f"INSPIRAL mode ({el}, {em}) goes from {np.min(frq_insp[(el, em)])}Hz to"
-                f" {np.max(frq_insp[(el, em)])}Hz"
-            )
-            print(
-                f"MERGER mode ({el}, {em}) goes from {np.min(frq_mr[(el, em)])}Hz to"
-                f" {np.max(frq_mr[(el, em)])}Hz"
-            )
-
     """ first we need to find the attachment region, based on the frequency """
 
     """ 
@@ -304,17 +230,25 @@ def blend_modes(
     """
     el, em = mode_to_align_by
 
+    if em <= 0:
+        raise ValueError(
+            f"mode_to_align_by must have positive m, got {mode_to_align_by}"
+        )
+
+    phase_mr_align = compute_phase(merger_ringdown_modes[(el, em)])
+    frq_mr_align = compute_frequency(phase_mr_align, delta_t)
+
     t1_index_mr = find_first_value_location_in_series(
-        frq_mr[(el, em)], frq_attach - frq_width / 2
+        frq_mr_align, frq_attach - frq_width / 2
+    )
+    t2_index_mr = find_first_value_location_in_series(
+        frq_mr_align, frq_attach + frq_width / 2
     )
 
-    t2_index_mr = find_first_value_location_in_series(
-        frq_mr[(el, em)], frq_attach + frq_width / 2
-    )
     """ 
     For eccentric inspiral, there will be multiple instances of the 
     same frequency. Pick the one having the highest index value (i.e. 
-    the one at the rightmost occurance in time) 
+    the one at the rightmost occurrence in time) 
 
     """
     if blend_using_avg_orbital_frequency:
@@ -323,14 +257,13 @@ def blend_modes(
         )
         if verbose > 1:
             print(f"""Hybridizing using orbital frequency. Frequency
-                  {frq_attach + frq_width / 2}Hz found at {t2_index_insp}.
-                  The same frequency would have been found at index
-                  {find_last_value_location_in_series(frq_insp[(el, em)],
-                  frq_attach + frq_width / 2)} of mode frequency evolution.
-                  """)
+                {frq_attach + frq_width / 2}Hz found at {t2_index_insp}.
+                """)
     else:
+        phase_insp_align = compute_phase(inspiral_modes[(el, em)])
+        frq_insp_align = compute_frequency(phase_insp_align, delta_t)
         t2_index_insp = find_last_value_location_in_series(
-            frq_insp[(el, em)], frq_attach + frq_width / 2
+            frq_insp_align, frq_attach + frq_width / 2
         )
 
     # another way to define t2_index_mr is through number of points in the inspiral window
@@ -353,151 +286,158 @@ def blend_modes(
         The mathematical way is to optimise the difference in frequencies over the matching 
         region and using that to determine deltaT, hence arriving at t1_index_mr. 
     """
-
-    sample_indices_insp = (
-        np.linspace(t1_index_insp, t2_index_insp, no_sp).astype(int) - t1_index_insp
-    )
-    sample_indices_mr = (
-        sample_indices_insp  # since the attachment region in both has the same length
-    )
-    """ alignment using corrective phase addition """
-
-    inspiral_modes_aligned = {}
-    amp_insp_aligned = {}
-    phase_insp_aligned = {}
-    frq_insp_aligned = {}
-
-    merger_ringdown_modes_aligned = {}
-    amp_mr_aligned = {}
-    phase_mr_aligned = {}
-    frq_mr_aligned = {}
-
-    (
-        inspiral_modes_aligned[(el, em)],
-        merger_ringdown_modes_aligned[(el, em)],
-        phase_correction,
-    ) = align_in_phase(
-        inspiral_modes[(el, em)],
-        merger_ringdown_modes[(el, em)],
-        sample_indices_insp,
-        sample_indices_mr,
-        t1_index_insp,
-        t2_index_insp,
-        t1_index_mr,
-        t2_index_mr,
-        m_mode=em,
-        align_merger_to_inspiral=blend_aligning_merger_to_inspiral,
-    )
-
-    amp_insp_aligned[(el, em)] = compute_amplitude(inspiral_modes_aligned[(el, em)])
-    phase_insp_aligned[(el, em)] = compute_phase(inspiral_modes_aligned[(el, em)])
-
-    amp_mr_aligned[(el, em)] = compute_amplitude(
-        merger_ringdown_modes_aligned[(el, em)]
-    )
-    phase_mr_aligned[(el, em)] = compute_phase(merger_ringdown_modes_aligned[(el, em)])
-
-    for el, em in modes_not_aligned_by:
-        if blend_aligning_merger_to_inspiral:
-            inspiral_modes_aligned[(el, em)] = inspiral_modes[(el, em)]
-            merger_ringdown_modes_aligned[(el, em)] = merger_ringdown_modes[
-                (el, em)
-            ] * np.exp(1j * em * phase_correction)
-        else:
-            inspiral_modes_aligned[(el, em)] = inspiral_modes[(el, em)] * np.exp(
-                1j * em * phase_correction
-            )
-            merger_ringdown_modes_aligned[(el, em)] = merger_ringdown_modes[(el, em)]
-        amp_insp_aligned[(el, em)] = compute_amplitude(inspiral_modes_aligned[(el, em)])
-        phase_insp_aligned[(el, em)] = compute_phase(inspiral_modes_aligned[(el, em)])
-        amp_mr_aligned[(el, em)] = compute_amplitude(
-            merger_ringdown_modes_aligned[(el, em)]
-        )
-        phase_mr_aligned[(el, em)] = compute_phase(
-            merger_ringdown_modes_aligned[(el, em)]
+    # For frequency computation below, we need at least one point before t1_index_insp/t1_index_mr
+    # and at least one point after t2_index_insp/t2_index_mr to compute frequency at these endpoints
+    # of the window using np.gradient with central differences. Making that sure here.
+    if t1_index_insp < 1:
+        raise ValueError("""Inspiral too short to accommodate the hybridization window. 
+Try reducing frq_width or moving frq_attach to a higher value.""")
+    if t2_index_insp + 2 > len(inspiral_modes[(el, em)]):
+        raise ValueError(
+            """Inspiral too short to accommodate the high attachment frequency. 
+Try moving frq_attach to a lower value."""
         )
 
-    """
-        It would be same as frq_mr as the corrected phase factor will be canceled in the derivative, 
-        defining frq_insp_aligned just for consistency 
-    """
-    frq_insp_aligned = frq_insp
-    frq_mr_aligned = frq_mr
+    if t1_index_mr < 1:
+        raise ValueError(
+            """Merger-ringdown too short to accommodate the hybridization window. 
+Try reducing frq_width or moving frq_attach to a higher value."""
+        )
+    if t2_index_mr + 2 > len(merger_ringdown_modes[(el, em)]):
+        raise ValueError(
+            """Merger-ringdown too short to accommodate the high attachment frequency. 
+Try moving frq_attach to a lower value."""
+        )
 
-    """ Performing attachment using the blending function """
+    frq_insp_window = {}
+    frq_mr_window = {}
+    # t2_index_mr + 1 since the window is inclusive of t2_index_mr
+    # Also, t2_index_mr + 1 should be <= len(merger_ringdown_modes[(el, em)]),
+    # which is guaranteed because find_first_value_location_in_series
+    # returns an index in the range [0, len(frq_mr_align)-1]
+    frq_mr_window[(el, em)] = frq_mr_align[t1_index_mr : t2_index_mr + 1]
+
+    if blend_using_avg_orbital_frequency:
+        # We compute frequency only within the window (inclusive of endpoints).
+        # Since it's computed by np.gradient which uses centered differences
+        # to compute the phase derivative, we need to compute the phase at one
+        # extra point on either side of the window to get accurate frequency at
+        # the endpoints of the window.
+        phase_insp_temp = compute_phase(
+            inspiral_modes[(el, em)][t1_index_insp - 1 : t2_index_insp + 1 + 1]
+        )
+        frq_insp_window[(el, em)] = compute_frequency(phase_insp_temp, delta_t)[1:-1]
+    else:
+        frq_insp_window[(el, em)] = frq_insp_align[t1_index_insp : t2_index_insp + 1]
+
+    # Non-alignment modes: window-only phase/frequency
+    for el_i, em_i in modes_to_blend:
+        if (el_i, em_i) == mode_to_align_by:
+            continue
+        phase_insp_temp = compute_phase(
+            inspiral_modes[(el_i, em_i)][t1_index_insp - 1 : t2_index_insp + 1 + 1]
+        )
+        frq_insp_window[(el_i, em_i)] = compute_frequency(phase_insp_temp, delta_t)[
+            1:-1
+        ]
+
+        phase_mr_temp = compute_phase(
+            merger_ringdown_modes[(el_i, em_i)][t1_index_mr - 1 : t2_index_mr + 1 + 1]
+        )
+        frq_mr_window[(el_i, em_i)] = compute_frequency(phase_mr_temp, delta_t)[1:-1]
+
+    amp_insp_window = {}
+    amp_mr_window = {}
+
+    for el_i, em_i in modes_to_blend:
+        amp_insp_window[(el_i, em_i)] = compute_amplitude(
+            inspiral_modes[(el_i, em_i)][t1_index_insp : t2_index_insp + 1]
+        )
+        amp_mr_window[(el_i, em_i)] = compute_amplitude(
+            merger_ringdown_modes[(el_i, em_i)][t1_index_mr : t2_index_mr + 1]
+        )
+
+    """ Blending the mode amplitudes and frequencies using the blending function """
 
     amp_hyb_window = {}
-    amp_hyb_full = {}
     frq_hyb_window = {}
     phase_hyb_window = {}
-    phase_hyb_full = {}
     hybrid_modes = {}
+
+    len_insp_window = t2_index_insp - t1_index_insp
+    len_mr_window = t2_index_mr - t1_index_mr
 
     for el, em in modes_to_blend:
         amp_hyb_window[(el, em)] = blend_series(
-            amp_insp_aligned[(el, em)],
-            amp_mr_aligned[(el, em)],
-            t1_index_insp,
-            t2_index_insp,
-            t1_index_mr,
-            t2_index_mr,
+            amp_insp_window[(el, em)],  # This should have length len_insp_window + 1
+            amp_mr_window[(el, em)],  # This should have length len_mr_window + 1
+            0,
+            len_insp_window,
+            0,
+            len_mr_window,
         )
         frq_hyb_window[(el, em)] = blend_series(
-            frq_insp_aligned[(el, em)],
-            frq_mr_aligned[(el, em)],
-            t1_index_insp,
-            t2_index_insp,
-            t1_index_mr,
-            t2_index_mr,
+            frq_insp_window[(el, em)],  # This should have length len_insp_window + 1
+            frq_mr_window[(el, em)],  # This should have length len_mr_window + 1
+            0,
+            len_insp_window,
+            0,
+            len_mr_window,
         )
-        """ Integrating frq_hyb to obtain phase_hyb and removing discontinuities, 
-            compiling amp_hyb and phase_hyb to obtain the hybrid waveform.     """
+        """ Integrating frq_hyb to obtain phase_hyb. """
 
         phase_hyb_window[(el, em)] = (2 * np.pi) * cumulative_trapezoid(
             frq_hyb_window[(el, em)], dx=delta_t, initial=0
         )
 
-    """ Right now the phase is integrated only inside the hybrid window, 
-    need to add constants to preserve phase continuity and compile full IMR phase """
-
-    def remove_phase_discontinuity(phase_insp_, phase_hyb_window_, phase_mr_):
-        if blend_aligning_merger_to_inspiral:
-            delta1 = phase_insp_[t1_index_insp] - phase_hyb_window_[0]
-            phase_hyb_1 = np.append(
-                phase_insp_[:t1_index_insp], phase_hyb_window_ + delta1
-            )
-            delta2 = phase_hyb_1[t2_index_insp - 1] - phase_mr_[t2_index_mr - 1]
-            phase_hyb_2 = np.append(
-                phase_hyb_1[: t2_index_insp - 1], phase_mr_[t2_index_mr - 1 :] + delta2
-            )
-        else:
-            delta1 = phase_hyb_window_[0] - phase_insp_[t1_index_insp]
-            phase_hyb_1 = np.append(
-                phase_insp_[:t1_index_insp] + delta1, phase_hyb_window_
-            )
-            delta2 = phase_mr_[t2_index_mr - 1] - phase_hyb_1[t2_index_insp - 1]
-            phase_hyb_2 = np.append(
-                phase_hyb_1[: t2_index_insp - 1] + delta2, phase_mr_[t2_index_mr - 1 :]
-            )
-        return phase_hyb_2
+    """ Right now the phase is integrated only inside the hybridization window, 
+    need to add constants to preserve phase continuity and compile full IMR modes. """
 
     for el, em in modes_to_blend:
-        phase_hyb_full[(el, em)] = remove_phase_discontinuity(
-            phase_insp_aligned[(el, em)],
-            phase_hyb_window[(el, em)],
-            phase_mr_aligned[(el, em)],
+        inspiral_angle_at_window_start = -np.angle(
+            inspiral_modes[(el, em)][t1_index_insp]
         )
+        mr_angle_at_window_end = -np.angle(merger_ringdown_modes[(el, em)][t2_index_mr])
 
-        amp_hyb_full[(el, em)] = np.append(
-            np.concatenate(
-                [amp_insp_aligned[(el, em)][:t1_index_insp], amp_hyb_window[(el, em)]]
-            )[: t2_index_insp - 1],
-            amp_mr_aligned[(el, em)][t2_index_mr - 1 :],
-        )
-
-        hybrid_modes[(el, em)] = amp_hyb_full[(el, em)] * np.exp(
-            -1j * phase_hyb_full[(el, em)]
-        )
+        if blend_aligning_merger_to_inspiral:
+            # Because phase_hyb_window[(el, em)] starts from 0 phase
+            # this will ensure that phase_hyb_window starts from
+            # inspiral_angle_at_window_start
+            phase_hyb_window[(el, em)] += inspiral_angle_at_window_start
+            mode_within_window = amp_hyb_window[(el, em)] * np.exp(
+                -1j * phase_hyb_window[(el, em)]
+            )
+            mr_phasor_shift = np.exp(
+                -1j * (phase_hyb_window[(el, em)][-1] - mr_angle_at_window_end)
+            )
+            hybrid_modes[(el, em)] = np.concatenate(
+                (
+                    inspiral_modes[(el, em)][:t1_index_insp],
+                    mode_within_window,
+                    merger_ringdown_modes[(el, em)][t2_index_mr + 1 :]
+                    * mr_phasor_shift,
+                )
+            )
+        else:
+            # Because phase_hyb_window[(el, em)] starts from 0 phase
+            # this will ensure that phase_hyb_window ends at
+            # mr_angle_at_window_end
+            phase_hyb_window[(el, em)] += (
+                mr_angle_at_window_end - phase_hyb_window[(el, em)][-1]
+            )
+            mode_within_window = amp_hyb_window[(el, em)] * np.exp(
+                -1j * phase_hyb_window[(el, em)]
+            )
+            inspiral_phasor_shift = np.exp(
+                -1j * (phase_hyb_window[(el, em)][0] - inspiral_angle_at_window_start)
+            )
+            hybrid_modes[(el, em)] = np.concatenate(
+                (
+                    inspiral_modes[(el, em)][:t1_index_insp] * inspiral_phasor_shift,
+                    mode_within_window,
+                    merger_ringdown_modes[(el, em)][t2_index_mr + 1 :],
+                )
+            )
 
     return (
         hybrid_modes,
@@ -505,22 +445,10 @@ def blend_modes(
         t1_index_mr,
         t2_index_insp,
         t2_index_mr,
-        frq_insp,
-        frq_mr,
-        frq_insp_aligned,
+        frq_insp_window,
         frq_hyb_window,
-        inspiral_modes_aligned,
-        merger_ringdown_modes_aligned,
-        sample_indices_insp,
-        sample_indices_mr,
-        amp_insp_aligned,
+        frq_mr_window,
+        amp_insp_window,
         amp_hyb_window,
-        amp_mr_aligned,
-        amp_hyb_full,
-        phase_insp,
-        phase_insp_aligned,
-        phase_hyb_window,
-        phase_mr_aligned,
-        phase_hyb_full,
-        phase_correction,
+        amp_mr_window,
     )
