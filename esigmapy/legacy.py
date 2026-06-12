@@ -2,6 +2,8 @@
 #
 """Legacy code to calibrate transition/attachment of inspiral and merger-ringdown"""
 
+import logging
+
 
 class FitMOmegaIMRAttachmentNonSpinning:
     called_once = False
@@ -62,7 +64,6 @@ class FitMOmegaIMRAttachmentNonSpinning:
             cls.called_once = True
         assert len(coeffs) == 6, "{} coeffs passed!".format(len(coeffs))
         a1, a2, a3, b1, b2, b3 = coeffs
-        s_eta = eta**0.5
         return (
             (1.0 / 6**1.5)
             * (1.0 + a1 * eta + a2 * eta**2 + a3 * eta**3)

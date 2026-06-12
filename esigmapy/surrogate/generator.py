@@ -8,7 +8,6 @@ import numpy as np
 import time
 import esigmapy
 import lal
-import lalsimulation as ls
 import pycbc.types as pt
 from esigmapy.utils import f_ISCO_spin
 from esigmapy.generator import (
