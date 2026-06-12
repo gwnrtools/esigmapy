@@ -1,7 +1,6 @@
 # Copyright (C) 2023 Prayush Kumar
 #
-"""Legacy code to calibrate transition/attachment of inspiral and merger-ringdown
-"""
+"""Legacy code to calibrate transition/attachment of inspiral and merger-ringdown"""
 
 
 class FitMOmegaIMRAttachmentNonSpinning:

@@ -1,6 +1,6 @@
 # Copyright (C) 2023 Kartikey Sharma, Prayush Kumar
 #
-"""Master function to hybridise any complex timeseries using the 'frequency' as a user input, 
+"""Master function to hybridise any complex timeseries using the 'frequency' as a user input,
 specifically to be used for gravitational waveform hybridisation, fine-tuned for a single mode.
 """
 
@@ -31,6 +31,7 @@ def find_first_value_location_in_series(frq_timeseries, frq_desired):
                 fr1 = frq_timeseries[idx]
                 fr2 = frq_timeseries[idx + 1]
 
+                # If equidistant, <= ensures we select the earlier index (idx)
                 if abs(frq_desired - fr1) <= abs(frq_desired - fr2):
                     final_idx = idx
                 else:
@@ -100,17 +101,13 @@ def align_in_phase(
     align_merger_to_inspiral=True,
 ):
     if len(inspiral) == 0:
-        raise IOError(
-            f"""You passed an inspiral waveform of zero length, to align
-                      with merger-ringdown!"""
-        )
+        raise IOError(f"""You passed an inspiral waveform of zero length, to align
+                      with merger-ringdown!""")
     if (t2_index_insp + 1 - t1_index_insp) < 1:
-        raise IOError(
-            f"""You have passed a very narrow window for the inspiral
+        raise IOError(f"""You have passed a very narrow window for the inspiral
                       waveform's hybridization. As per your input, the inspiral
                       waveform from index {t1_index_insp} to {t2_index_insp + 1}
-                      should be used to attach merger-ringdown"""
-        )
+                      should be used to attach merger-ringdown""")
 
     # Function alignes the two waveforms using the phase, optimised over the attachment region
     # m from l,m mode
@@ -237,10 +234,8 @@ def blend_modes(
         Set this to True to enable logging output.
     """
     if frq_width <= 0:
-        raise IOError(
-            f"""You are trying to blend over a frequency window of
-            negative length (= {frq_width}Hz). Fix this."""
-        )
+        raise IOError(f"""You are trying to blend over a frequency window of
+            negative length (= {frq_width}Hz). Fix this.""")
     if blend_using_avg_orbital_frequency:
         if len(inspiral_orbital_frequency) != len(inspiral_modes[mode_to_align_by]):
             raise IOError(
@@ -327,14 +322,12 @@ def blend_modes(
             inspiral_orbital_frequency, (frq_attach + frq_width / 2) / em
         )
         if verbose > 1:
-            print(
-                f"""Hybridizing using orbital frequency. Frequency
+            print(f"""Hybridizing using orbital frequency. Frequency
                   {frq_attach + frq_width / 2}Hz found at {t2_index_insp}.
                   The same frequency would have been found at index
                   {find_last_value_location_in_series(frq_insp[(el, em)],
                   frq_attach + frq_width / 2)} of mode frequency evolution.
-                  """
-            )
+                  """)
     else:
         t2_index_insp = find_last_value_location_in_series(
             frq_insp[(el, em)], frq_attach + frq_width / 2
@@ -344,17 +337,13 @@ def blend_modes(
     t1_index_insp = t2_index_insp - (t2_index_mr - t1_index_mr)
 
     if verbose > 4:
-        print(
-            f"""In the merger-ringdown waveform, the hybridization frequency window
+        print(f"""In the merger-ringdown waveform, the hybridization frequency window
               [{frq_attach - frq_width / 2}, {frq_attach + frq_width / 2}]
               was found at indices [{t1_index_mr}, {t2_index_mr}]
-              """
-        )
-        print(
-            f"""In the inspiral waveform, the same window is to be found at
+              """)
+        print(f"""In the inspiral waveform, the same window is to be found at
               indices [{t1_index_insp}, {t2_index_insp}.]
-              """
-        )
+              """)
     """ 
         Theoretically, we NEED a timeshift to align the waveforms in frequency. 
         Instead of shifting one of the two waveforms for alignment, we are defining

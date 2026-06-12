@@ -170,7 +170,6 @@ class CircularSurrogate(Surrogate):
         return_amp_phase_only=False,
         return_orbital_variables=False,
     ):
-
         if delta_t is None and times is None:
             raise ValueError("Either delta_t or times must be provided.")
 
@@ -290,9 +289,12 @@ class EccentricSurrogate(Surrogate):
                 )
 
     def load_sur_metadata(self):
-        self.sur_total_mass, self.t_ref, self.t_grid_sur, self.l_grid_sur = (
-            self.get_metadata(["M", "t_ref", "t_grid_sur", "l_grid_sur"])
-        )
+        (
+            self.sur_total_mass,
+            self.t_ref,
+            self.t_grid_sur,
+            self.l_grid_sur,
+        ) = self.get_metadata(["M", "t_ref", "t_grid_sur", "l_grid_sur"])
 
     def load_ei_indices(self):
         filename_ei_indices = os.path.join(self.sur_dir, f"ei_indices.npz")
@@ -364,7 +366,6 @@ class EccentricSurrogate(Surrogate):
         remove_start_phase=True,
         return_orbital_variables=False,
     ):
-
         if delta_t is None and times is None:
             raise ValueError("Either delta_t or times must be provided.")
 
