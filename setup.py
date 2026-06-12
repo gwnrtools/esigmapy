@@ -83,7 +83,7 @@ else:
         version = (
             check_output(
                 """git log -1 --format=%cd --date=format:'%Y.%m.%d.%H.%M.%S'""",
-                shell=use_shell,
+                shell=True,
             )
             .decode("ascii")
             .rstrip()

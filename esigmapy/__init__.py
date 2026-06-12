@@ -1,7 +1,14 @@
 from __future__ import absolute_import
 
 from . import blend, generator, mr_generator, legacy, utils
-from .generator import *
+from .generator import (
+    eccentricity_at_extremum_frequency,
+    eccentricity_at_reference_frequency,
+    get_imr_esigma_modes,
+    get_imr_esigma_waveform,
+    get_inspiral_esigma_modes,
+    get_inspiral_esigma_waveform,
+)
 
 
 def get_version_information():
