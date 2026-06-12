@@ -422,13 +422,11 @@ def get_imr_esigmasur_mode(
             set(available_inspiral_orbital_params)
         )
         if return_orbital_params_user != set(return_orbital_params):
-            print(
-                f"""Warning: You requested the following list of orbital
+            print(f"""Warning: You requested the following list of orbital
 parameters to be returned: {return_orbital_params}, but we reduce it to
 {return_orbital_params_user} as we only have the evolution of the following 
 parameters available with us: {available_inspiral_orbital_params}.
-                  """
-            )
+                  """)
     elif not return_orbital_params:
         return_orbital_params = []
         return_orbital_params_user = False
@@ -475,29 +473,23 @@ parameters available with us: {available_inspiral_orbital_params}.
     modes_inspiral_numpy = retval[-1]
 
     if mode_to_align_by not in modes_inspiral_numpy:
-        raise RuntimeError(
-            f"""The inspiral modes do not contain the primary 
+        raise RuntimeError(f"""The inspiral modes do not contain the primary 
 desired {mode_to_align_by} multipole. It currently holds only the following:
-{modes_inspiral_numpy.keys()}"""
-        )
+{modes_inspiral_numpy.keys()}""")
 
     orbital_eccentricity = retval[-2]["e"]
     # Throw error if eccentricity at the end of inspiral is definitely unsafe
     if orbital_eccentricity[-1] > ECCENTRICITY_LEVEL_ISCO_ERROR:
-        raise IOError(
-            f"""ERROR: You entered a very large reference eccentricity
+        raise IOError(f"""ERROR: You entered a very large reference eccentricity
 {reference_eccentricity}. The orbital eccentricity at the end of inspiral was
 {orbital_eccentricity[-1]}. The merger-ringdown attachment with a
-quasicircular will be questionable."""
-        )
+quasicircular will be questionable.""")
     # Warn user if eccentricity at the end of inspiral is potentially unsafe
     if orbital_eccentricity[-1] > ECCENTRICITY_LEVEL_ISCO_WARNING and verbose:
-        print(
-            f"""WARNING: You entered a very large reference eccentricity
+        print(f"""WARNING: You entered a very large reference eccentricity
 {reference_eccentricity}. The orbital eccentricity at the end of inspiral was
 {orbital_eccentricity[-1]}. The merger-ringdown attachment with a quasicircular
-model might be affected."""
-        )
+model might be affected.""")
 
     if (f_window_mr_transition is None) or failsafe or (verbose > 1):
         if blend_using_avg_orbital_frequency:
@@ -521,14 +513,12 @@ model might be affected."""
             modes_inspiral_numpy[mode_to_align_by]
         )
         mode_frequency = esigmapy.blend.compute_frequency(mode_phase, delta_t)
-        print(
-            f"""DEBUG: Orbital freq at end of inspiral is {orbital_frequency[-1]}Hz,
+        print(f"""DEBUG: Orbital freq at end of inspiral is {orbital_frequency[-1]}Hz,
 mode-{mode_to_align_by} freq at the end of inspiral is {mode_frequency[-1]}Hz, max and min
 mode-{mode_to_align_by} frequencies are {np.max(mode_frequency)}Hz and
 {np.min(mode_frequency)}Hz, and the transition frequency (of {mode_to_align_by}-mode)
 requested is {f_mr_transition}Hz, which should be less than the maximum freq of
-{mode_to_align_by}-mode: {mode_frequency.max()}Hz."""
-        )
+{mode_to_align_by}-mode: {mode_frequency.max()}Hz.""")
         return (
             modes_inspiral_numpy,
             mode_phase,
@@ -547,12 +537,10 @@ requested is {f_mr_transition}Hz, which should be less than the maximum freq of
         mode_frequency = esigmapy.blend.compute_frequency(mode_phase, delta_t)
         if mode_frequency.max() < f_mr_transition:
             if verbose:
-                print(
-                    f"""FAILSAFE: Maximum orbital freq during inspiral is
+                print(f"""FAILSAFE: Maximum orbital freq during inspiral is
 {orbital_frequency.max()}Hz, and max frequency of {mode_to_align_by}-mode is
 {mode_frequency.max()}Hz, so we are resetting transition frequency from
-{f_mr_transition}Hz to {mode_frequency.max()}Hz."""
-                )
+{f_mr_transition}Hz to {mode_frequency.max()}Hz.""")
             f_mr_transition = mode_frequency.max()
 
     # If the user does not provide the width of hybridization window (
@@ -633,12 +621,10 @@ Last f_lower tried: {f_lower_mr/0.8:.4f}Hz."""
             verbose=verbose,
         )
     except Exception as exc:
-        print(
-            f"""Inspiral + MergerRingdown attachment failed. Its very likely
+        print(f"""Inspiral + MergerRingdown attachment failed. Its very likely
 that you entered a very large reference eccentricity {reference_eccentricity}. The orbital
 eccentricity at the end of inspiral was {orbital_eccentricity[-1]}
-              """
-        )
+              """)
         raise exc
     modes_imr_numpy = retval[0]
 

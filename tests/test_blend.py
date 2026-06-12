@@ -28,10 +28,10 @@ class TestFindFirstValue:
             find_first_value_location_in_series(np.array([1.0, 2.0, 3.0]), 3.5)
 
     def test_returns_first_bracket_index(self):
-        # 1.5 lies between arr[1]=1 and arr[2]=2; nearest is equidistant → either valid
+        # 1.5 lies between arr[1]=1 and arr[2]=2; nearest is equidistant → returns earlier index
         arr = np.array([0.0, 1.0, 2.0, 3.0])
         idx = find_first_value_location_in_series(arr, 1.5)
-        assert idx in (1, 2)
+        assert idx == 1
 
     def test_nearer_left_element_chosen(self):
         # 1.2 is closer to arr[1]=1.0 than arr[2]=2.0

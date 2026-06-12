@@ -125,6 +125,10 @@ if __name__ == "__main__":
                 "numba",
             ],
             "pyseobnr": ["pyseobnr"],
+            "dev": [
+                "black==26.5.1",
+                "pytest",
+            ],
             "all": [
                 "tpi-splines",
                 "numba",
