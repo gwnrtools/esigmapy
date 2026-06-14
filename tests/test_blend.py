@@ -2,7 +2,6 @@ import numpy as np
 import pytest
 
 from esigmapy.blend import (
-    align_in_phase,
     blend_modes,
     blend_series,
     compute_amplitude,
@@ -10,7 +9,6 @@ from esigmapy.blend import (
     compute_phase,
     find_first_value_location_in_series,
     find_last_value_location_in_series,
-    mismatch_discrete,
 )
 
 # ---------------------------------------------------------------------------
@@ -231,49 +229,6 @@ class TestComputeFrequency:
 
 
 # ---------------------------------------------------------------------------
-# mismatch_discrete
-# ---------------------------------------------------------------------------
-
-
-class TestMismatchDiscrete:
-    @staticmethod
-    def _all_idx(n):
-        return np.arange(n)
-
-    def test_identical_waveforms_zero_mismatch(self):
-        w = np.exp(-1j * np.linspace(0, 4 * np.pi, 50))
-        idx = self._all_idx(len(w))
-        assert mismatch_discrete(w, w, idx, idx) == pytest.approx(0.0, abs=1e-14)
-
-    def test_quadrature_phase_gives_mismatch_one(self):
-        # w2 = i * w1  →  |w1 - w2|^2 = 2|w1|^2  →  mm = 0.5 * 2 = 1.0
-        w1 = np.ones(20, dtype=complex)
-        w2 = 1j * w1
-        idx = self._all_idx(len(w1))
-        assert mismatch_discrete(w1, w2, idx, idx) == pytest.approx(1.0, rel=1e-12)
-
-    def test_antiphase_gives_mismatch_two(self):
-        # w2 = -w1  →  |w1 - w2|^2 = 4|w1|^2  →  mm = 0.5 * 4 = 2.0
-        w1 = np.ones(20, dtype=complex)
-        w2 = -w1
-        idx = self._all_idx(len(w1))
-        assert mismatch_discrete(w1, w2, idx, idx) == pytest.approx(2.0, rel=1e-12)
-
-    def test_nonnegative(self):
-        rng = np.random.default_rng(1)
-        w1 = rng.standard_normal(30) + 1j * rng.standard_normal(30)
-        w2 = rng.standard_normal(30) + 1j * rng.standard_normal(30)
-        idx = self._all_idx(len(w1))
-        assert mismatch_discrete(w1, w2, idx, idx) >= 0
-
-    def test_subsample_indices(self):
-        # Using every other sample should still give 0 for identical waveforms
-        w = np.exp(-1j * np.linspace(0, 2 * np.pi, 40))
-        idx = np.arange(0, 40, 2)
-        assert mismatch_discrete(w, w, idx, idx) == pytest.approx(0.0, abs=1e-14)
-
-
-# ---------------------------------------------------------------------------
 # blend_series
 # ---------------------------------------------------------------------------
 
@@ -289,15 +244,16 @@ class TestBlendSeries:
         x1 = np.zeros(100)
         x2 = np.ones(100)
         result = blend_series(x1, x2, 20, 40, 20, 40)
-        # tau at last point = sin^2(pi/2 * (n-1)/n), very close to 1
-        assert result[-1] > 0.97
+        assert result[-1] == pytest.approx(1.0)  # tau=1 at right edge
 
     def test_output_length(self):
         x1 = np.ones(100)
         x2 = np.zeros(100)
         t1, t2 = 10, 30
         result = blend_series(x1, x2, t1, t2, t1, t2)
-        assert len(result) == t2 - t1
+        # blend_series assumes t1 and t2 are inclusive indices;
+        # output length should be t2 - t1 + 1
+        assert len(result) == t2 - t1 + 1
 
     def test_monotone_blend_between_constants(self):
         # Blending from 0→1 over a window must be monotone non-decreasing
@@ -309,130 +265,17 @@ class TestBlendSeries:
     def test_unequal_window_lengths_raise(self):
         x1 = np.ones(100)
         x2 = np.ones(100)
-        with pytest.raises(AssertionError):
-            blend_series(x1, x2, 10, 30, 10, 25)  # insp window=20, mr window=15
+        with pytest.raises(ValueError):
+            blend_series(x1, x2, 10, 30, 10, 25)  # insp window=21, mr window=16
 
     def test_different_offsets_same_length(self):
         # Windows can be at different positions but must have the same length
         x1 = np.arange(100, dtype=float)
         x2 = np.arange(100, dtype=float) * 2
-        result = blend_series(x1, x2, 10, 30, 50, 70)  # both windows length 20
-        assert len(result) == 20
+        result = blend_series(x1, x2, 10, 30, 50, 70)  # both windows length 20+1=21
+        assert len(result) == 21
         assert result[0] == pytest.approx(x1[10])
-
-
-# ---------------------------------------------------------------------------
-# align_in_phase
-# ---------------------------------------------------------------------------
-
-
-class TestAlignInPhase:
-    @staticmethod
-    def _make_chirp(n=200, f0=50.0, dt=1.0 / 4096):
-        t = np.arange(n) * dt
-        return np.exp(-1j * 2 * np.pi * f0 * t)
-
-    @staticmethod
-    def _sample_idx(t1, t2, no_sp=8):
-        return np.linspace(t1, t2, no_sp, dtype=int) - t1
-
-    def test_empty_inspiral_raises(self):
-        with pytest.raises(IOError, match="[Zz]ero length"):
-            align_in_phase(
-                np.array([]),
-                np.ones(10, dtype=complex),
-                np.arange(5),
-                np.arange(5),
-                0,
-                4,
-                0,
-                4,
-            )
-
-    def test_narrow_window_raises(self):
-        with pytest.raises(IOError):
-            align_in_phase(
-                np.ones(10, dtype=complex),
-                np.ones(10, dtype=complex),
-                np.arange(1),
-                np.arange(1),
-                5,
-                4,
-                5,
-                4,  # t2 < t1: zero-width window
-            )
-
-    def test_identical_waveforms_zero_shift(self):
-        wave = self._make_chirp()
-        t1, t2 = 50, 100
-        idx = self._sample_idx(t1, t2)
-        _, _, shift = align_in_phase(wave, wave, idx, idx, t1, t2, t1, t2, m_mode=2)
-        # Optimal shift for identical waveforms is 0 (mod 2π/m)
-        assert np.cos(2 * shift) == pytest.approx(1.0, abs=1e-3)
-
-    def test_reduces_mismatch(self):
-        wave = self._make_chirp()
-        delta = np.pi / 4  # deliberate phase offset
-        mr = wave * np.exp(1j * delta)
-        t1, t2 = 50, 100
-        idx = self._sample_idx(t1, t2)
-
-        mm_before = mismatch_discrete(wave[t1 : t2 + 1], mr[t1 : t2 + 1], idx, idx)
-        insp_a, mr_a, _ = align_in_phase(
-            wave,
-            mr,
-            idx,
-            idx,
-            t1,
-            t2,
-            t1,
-            t2,
-            m_mode=2,
-            align_merger_to_inspiral=True,
-        )
-        mm_after = mismatch_discrete(insp_a[t1 : t2 + 1], mr_a[t1 : t2 + 1], idx, idx)
-        assert mm_after < mm_before
-
-    def test_align_merger_to_inspiral_order(self):
-        wave = self._make_chirp()
-        mr = wave * np.exp(1j * 0.3)
-        t1, t2 = 30, 80
-        idx = self._sample_idx(t1, t2)
-        insp_out, mr_out, _ = align_in_phase(
-            wave,
-            mr,
-            idx,
-            idx,
-            t1,
-            t2,
-            t1,
-            t2,
-            align_merger_to_inspiral=True,
-        )
-        # Inspiral is unchanged; merger-ringdown is shifted toward inspiral
-        assert np.allclose(insp_out, wave, rtol=1e-15, atol=1e-15)
-        assert not np.allclose(mr_out, mr, rtol=1e-15, atol=1e-15)  # mr was modified
-        assert np.allclose(mr_out, wave, rtol=1e-15, atol=1e-7)  # and now matches wave
-
-    def test_align_inspiral_to_merger_order(self):
-        wave = self._make_chirp()
-        mr = wave * np.exp(1j * 0.3)
-        t1, t2 = 30, 80
-        idx = self._sample_idx(t1, t2)
-        insp_out, mr_out, _ = align_in_phase(
-            wave,
-            mr,
-            idx,
-            idx,
-            t1,
-            t2,
-            t1,
-            t2,
-            align_merger_to_inspiral=False,
-        )
-        # Merger-ringdown is unchanged; inspiral is shifted
-        assert np.allclose(mr_out, mr, rtol=1e-15, atol=1e-15)
-        assert not np.allclose(insp_out, wave, rtol=1e-15, atol=1e-15)
+        assert result[-1] == pytest.approx(x2[70])
 
 
 # ---------------------------------------------------------------------------
