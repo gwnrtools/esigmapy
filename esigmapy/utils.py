@@ -2,8 +2,15 @@
 #
 from __future__ import absolute_import, print_function
 
+import functools
 import lal
 import numpy as np
+from numba import njit
+
+
+@functools.lru_cache(maxsize=512)
+def _ylm(inclination, coa_phase, el, em):
+    return lal.SpinWeightedSphericalHarmonic(inclination, coa_phase, -2, el, em)
 
 
 def f22_from_x(x, M):
@@ -114,6 +121,26 @@ def f_ISCO_spin(mass1, mass2, spin1z, spin2z):
     return 1 / 2 * fre
 
 
+@njit
+def _get_peak_freqs_numba(fvals, sample_times):
+    n = len(fvals)
+    count = 0
+    for idx in range(1, n - 1):
+        if fvals[idx - 1] < fvals[idx] and fvals[idx + 1] < fvals[idx]:
+            count += 1
+
+    peaks = np.empty(count)
+    peak_times = np.empty(count)
+    curr = 0
+    for idx in range(1, n - 1):
+        if fvals[idx - 1] < fvals[idx] and fvals[idx + 1] < fvals[idx]:
+            peaks[curr] = fvals[idx]
+            peak_times[curr] = sample_times[idx]
+            curr += 1
+
+    return peak_times, peaks
+
+
 def get_peak_freqs(freq):
     """
     Inputs
@@ -125,18 +152,9 @@ def get_peak_freqs(freq):
     peak_times: Times at which local maxima of frequency are attained
     peak_freqs: Frequency at these times
     """
-    peaks, peak_times = [], []
-    fvals = freq.data
-
-    for idx, finst in enumerate(fvals):
-        if idx == 0 or idx == len(fvals) - 1:
-            continue
-
-        if ((fvals[idx - 1]) < (finst)) and ((fvals[idx + 1]) < (finst)):
-            peaks.append(finst)
-            peak_times.append(freq.sample_times[idx])
-
-    return np.array(peak_times), np.array(peaks)
+    fvals = np.asarray(freq.data, dtype=np.float64)
+    sample_times = np.asarray(freq.sample_times, dtype=np.float64)
+    return _get_peak_freqs_numba(fvals, sample_times)
 
 
 def get_polarizations_from_multipoles(
@@ -170,7 +188,7 @@ def get_polarizations_from_multipoles(
         hc = waveform_multipoles[available_modes[0]].real() * 0
 
     for el, em in waveform_multipoles:
-        ylm = lal.SpinWeightedSphericalHarmonic(inclination, coa_phase, -2, el, em)
+        ylm = _ylm(inclination, coa_phase, el, em)
         glm = waveform_multipoles[(el, em)] * ylm
         if verbose > 4:
             print(f"Adding mode {el}, {em} with ylm = {ylm}", flush=True)

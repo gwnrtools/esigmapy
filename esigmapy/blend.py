@@ -5,7 +5,26 @@ specifically to be used for gravitational waveform hybridisation, fine-tuned for
 """
 
 import numpy as np
-from scipy.integrate import cumulative_trapezoid
+from numba import njit
+
+
+@njit
+def _find_first_value_location_in_series_numba(frq_timeseries, frq_desired):
+    n = len(frq_timeseries)
+    final_idx = -1
+    for idx in range(n - 1):
+        if (
+            frq_timeseries[idx] <= frq_desired
+            and frq_timeseries[idx + 1] >= frq_desired
+        ):
+            fr1 = frq_timeseries[idx]
+            fr2 = frq_timeseries[idx + 1]
+            if abs(frq_desired - fr1) <= abs(frq_desired - fr2):
+                final_idx = idx
+            else:
+                final_idx = idx + 1
+            break
+    return final_idx
 
 
 # Akash: Can use @njit here, but numba is not a dependency of default ESIGMAPy currently
@@ -16,19 +35,29 @@ def find_first_value_location_in_series(frq_timeseries, frq_desired):
     if frq_desired > np.max(frq_timeseries):
         raise Exception("Desired frequency out of bounds, higher than max frequency")
 
-    """ 
-    We traverse the array to find the location where the i_th value is less than
-    the desired value while the i+1_th value is more, hence locating the desired 
-    value somewhere between those two points. We then choose the value closer to 
-    the value desired (among i and i+1) and call it the location of the desired value. 
-    """
-    for idx in range(len(frq_timeseries) - 1):
-        if frq_timeseries[idx] <= frq_desired <= frq_timeseries[idx + 1]:
-            fr1 = frq_timeseries[idx]
-            fr2 = frq_timeseries[idx + 1]
-            # If equidistant, <= ensures we select the earlier index (idx)
-            return idx if abs(frq_desired - fr1) <= abs(frq_desired - fr2) else idx + 1
-    raise ValueError("frq_desired not found in frq_timeseries")
+    idx = _find_first_value_location_in_series_numba(
+        np.asarray(frq_timeseries, dtype=np.float64),
+        float(frq_desired),
+    )
+    if idx == -1:
+        raise ValueError("Desired frequency bracket not found in timeseries")
+    return idx
+
+
+@njit
+def _find_last_value_location_in_series_numba(frq_timeseries, frq_desired):
+    n = len(frq_timeseries)
+    final_idx = n - 1
+    for idx in range(n - 1):
+        val1 = frq_timeseries[n - 1 - idx]
+        val2 = frq_timeseries[n - 2 - idx]
+        if val1 >= frq_desired and val2 <= frq_desired:
+            if abs(frq_desired - val1) <= abs(frq_desired - val2):
+                final_idx = idx
+            else:
+                final_idx = idx + 1
+            break
+    return n - 1 - final_idx
 
 
 # Akash: Can use @njit here, but numba is not a dependency of default ESIGMAPy currently
@@ -43,34 +72,13 @@ def find_last_value_location_in_series(frq_timeseries, frq_desired):
             f"""Desired value {frq_desired} out of bounds, higher than max value {np.max(frq_timeseries)}"""
         )
 
-    """ 
-    We reverse the array and traverse it to find the location where the i_th value is more than
-    the desired value while the i+1_th value is less, hence locating the desired value somewhere
-    between those two points. We then choose the value closer to the value desired (among i and i+1) 
-    and call it the location of the desired value. 
-    """
-    reversed_freq_timeseries = frq_timeseries[::-1]
-    final_idx = None
-
-    for idx in range(len(reversed_freq_timeseries) - 1):
-        # This assumes that the frequency is monotonically increasing with time,
-        # which is true only for orbit-averaged frequency for eccentric waveforms
-        if (
-            reversed_freq_timeseries[idx]
-            >= frq_desired
-            >= reversed_freq_timeseries[idx + 1]
-        ):
-            fr1 = reversed_freq_timeseries[idx]
-            fr2 = reversed_freq_timeseries[idx + 1]
-            final_idx = (
-                idx if abs(frq_desired - fr1) <= abs(frq_desired - fr2) else idx + 1
-            )
-            break
-    if final_idx is None:
-        raise ValueError("frq_desired not found in frq_timeseries")
-    return len(frq_timeseries) - 1 - final_idx
+    return _find_last_value_location_in_series_numba(
+        np.asarray(frq_timeseries, dtype=np.float64),
+        float(frq_desired),
+    )
 
 
+@njit
 def blend_series(x1, x2, t1_index_insp, t2_index_insp, t1_index_mr, t2_index_mr):
     """
     Function to blend two series x1 and x2 over the window defined by t1_index_insp, t2_index_insp for x1 and t1_index_mr, t2_index_mr for x2.
@@ -93,17 +101,15 @@ def blend_series(x1, x2, t1_index_insp, t2_index_insp, t1_index_mr, t2_index_mr)
     if insp_index_range != mr_index_range:
         raise ValueError("Inconsistent indices passed to blending function")
 
-    # blending fn is an array
-    blfn_var = np.arange(
-        t1_index_insp, t2_index_insp + 1
-    )  # +1 since the window is inclusive of t2_index_insp
-    tau = np.square(
-        (np.sin((np.pi / 2) * (blfn_var - t1_index_insp) / insp_index_range))
-    )
+    n_points = insp_index_range + 1
+    x_hyb = np.empty(n_points, dtype=x1.dtype)
 
-    x_hyb = (1 - tau) * x1[t1_index_insp : t2_index_insp + 1] + tau * x2[
-        t1_index_mr : t2_index_mr + 1
-    ]
+    for i in range(n_points):
+        tau_val = np.sin((np.pi / 2) * i / insp_index_range) ** 2
+        x_hyb[i] = (1.0 - tau_val) * x1[t1_index_insp + i] + tau_val * x2[
+            t1_index_mr + i
+        ]
+
     return x_hyb
 
 
@@ -112,14 +118,37 @@ def compute_amplitude(waveform):
     return amplitude
 
 
+@njit
 def compute_phase(waveform):
-    phase = np.unwrap(-np.angle(waveform))
-    return phase
+    angle = -np.angle(waveform)
+    n = len(angle)
+    unwrapped = np.empty(n, dtype=np.float64)
+    if n == 0:
+        return unwrapped
+    unwrapped[0] = angle[0]
+    for i in range(1, n):
+        diff = angle[i] - angle[i - 1]
+        diff = (diff + np.pi) % (2 * np.pi) - np.pi
+        unwrapped[i] = unwrapped[i - 1] + diff
+    return unwrapped
 
 
+@njit
 def compute_frequency(phase, delta_t):
-    frequency = np.gradient(phase, delta_t) / (2 * np.pi)
-    return frequency
+    n = len(phase)
+    freq = np.empty(n, dtype=np.float64)
+    if n == 0:
+        return freq
+    if n == 1:
+        freq[0] = 0.0
+        return freq
+    factor = 1.0 / (2 * np.pi * delta_t)
+    freq[0] = (phase[1] - phase[0]) * factor
+    freq[n - 1] = (phase[n - 1] - phase[n - 2]) * factor
+    factor2 = 1.0 / (4 * np.pi * delta_t)
+    for i in range(1, n - 1):
+        freq[i] = (phase[i + 1] - phase[i - 1]) * factor2
+    return freq
 
 
 def blend_modes(
@@ -348,17 +377,6 @@ Try moving frq_attach to a lower value."""
 
     amp_insp_window = {}
     amp_mr_window = {}
-
-    for el_i, em_i in modes_to_blend:
-        amp_insp_window[(el_i, em_i)] = compute_amplitude(
-            inspiral_modes[(el_i, em_i)][t1_index_insp : t2_index_insp + 1]
-        )
-        amp_mr_window[(el_i, em_i)] = compute_amplitude(
-            merger_ringdown_modes[(el_i, em_i)][t1_index_mr : t2_index_mr + 1]
-        )
-
-    """ Blending the mode amplitudes and frequencies using the blending function """
-
     amp_hyb_window = {}
     frq_hyb_window = {}
     phase_hyb_window = {}
@@ -368,48 +386,43 @@ Try moving frq_attach to a lower value."""
     len_mr_window = t2_index_mr - t1_index_mr
 
     for el, em in modes_to_blend:
-        amp_hyb_window[(el, em)] = blend_series(
-            amp_insp_window[(el, em)],  # This should have length len_insp_window + 1
-            amp_mr_window[(el, em)],  # This should have length len_mr_window + 1
+        amp_insp_w = compute_amplitude(
+            inspiral_modes[(el, em)][t1_index_insp : t2_index_insp + 1]
+        )
+        amp_mr_w = compute_amplitude(
+            merger_ringdown_modes[(el, em)][t1_index_mr : t2_index_mr + 1]
+        )
+        amp_insp_window[(el, em)] = amp_insp_w
+        amp_mr_window[(el, em)] = amp_mr_w
+        amp_h = blend_series(amp_insp_w, amp_mr_w, 0, len_insp_window, 0, len_mr_window)
+        amp_hyb_window[(el, em)] = amp_h
+
+        frq_h = blend_series(
+            frq_insp_window[(el, em)],
+            frq_mr_window[(el, em)],
             0,
             len_insp_window,
             0,
             len_mr_window,
         )
-        frq_hyb_window[(el, em)] = blend_series(
-            frq_insp_window[(el, em)],  # This should have length len_insp_window + 1
-            frq_mr_window[(el, em)],  # This should have length len_mr_window + 1
-            0,
-            len_insp_window,
-            0,
-            len_mr_window,
-        )
-        """ Integrating frq_hyb to obtain phase_hyb. """
+        frq_hyb_window[(el, em)] = frq_h
 
-        phase_hyb_window[(el, em)] = (2 * np.pi) * cumulative_trapezoid(
-            frq_hyb_window[(el, em)], dx=delta_t, initial=0
-        )
+        # Trapezoidal integration: phase = 2π ∫ f dt
+        phase_h = np.empty(len(frq_h))
+        phase_h[0] = 0.0
+        phase_h[1:] = np.cumsum(0.5 * (frq_h[:-1] + frq_h[1:]) * delta_t)
+        phase_h *= 2 * np.pi
 
-    """ Right now the phase is integrated only inside the hybridization window, 
-    need to add constants to preserve phase continuity and compile full IMR modes. """
-
-    for el, em in modes_to_blend:
         inspiral_angle_at_window_start = -np.angle(
             inspiral_modes[(el, em)][t1_index_insp]
         )
         mr_angle_at_window_end = -np.angle(merger_ringdown_modes[(el, em)][t2_index_mr])
 
         if blend_aligning_merger_to_inspiral:
-            # Because phase_hyb_window[(el, em)] starts from 0 phase
-            # this will ensure that phase_hyb_window starts from
-            # inspiral_angle_at_window_start
-            phase_hyb_window[(el, em)] += inspiral_angle_at_window_start
-            mode_within_window = amp_hyb_window[(el, em)] * np.exp(
-                -1j * phase_hyb_window[(el, em)]
-            )
-            mr_phasor_shift = np.exp(
-                -1j * (phase_hyb_window[(el, em)][-1] - mr_angle_at_window_end)
-            )
+            phase_h += inspiral_angle_at_window_start
+            phase_hyb_window[(el, em)] = phase_h
+            mode_within_window = amp_h * np.exp(-1j * phase_h)
+            mr_phasor_shift = np.exp(-1j * (phase_h[-1] - mr_angle_at_window_end))
             hybrid_modes[(el, em)] = np.concatenate(
                 (
                     inspiral_modes[(el, em)][:t1_index_insp],
@@ -419,17 +432,11 @@ Try moving frq_attach to a lower value."""
                 )
             )
         else:
-            # Because phase_hyb_window[(el, em)] starts from 0 phase
-            # this will ensure that phase_hyb_window ends at
-            # mr_angle_at_window_end
-            phase_hyb_window[(el, em)] += (
-                mr_angle_at_window_end - phase_hyb_window[(el, em)][-1]
-            )
-            mode_within_window = amp_hyb_window[(el, em)] * np.exp(
-                -1j * phase_hyb_window[(el, em)]
-            )
+            phase_h += mr_angle_at_window_end - phase_h[-1]
+            phase_hyb_window[(el, em)] = phase_h
+            mode_within_window = amp_h * np.exp(-1j * phase_h)
             inspiral_phasor_shift = np.exp(
-                -1j * (phase_hyb_window[(el, em)][0] - inspiral_angle_at_window_start)
+                -1j * (phase_h[0] - inspiral_angle_at_window_start)
             )
             hybrid_modes[(el, em)] = np.concatenate(
                 (

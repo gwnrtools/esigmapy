@@ -10,6 +10,7 @@ import esigmapy
 import lal
 import lalsimulation as ls
 import pycbc.types as pt
+from numba import njit
 from .utils import f_ISCO_spin
 from .condition import apply_taper_both_pols
 from .mr_generator import check_available_mr_approximants, get_mr_modes
@@ -464,6 +465,25 @@ def get_inspiral_esigma_waveform(
     return t, hp, hc
 
 
+@njit
+def _get_window_start_numba(freq_, delta_t_, delta_phi_, direction_is_backward):
+    n = len(freq_)
+    abs_delta_phi = abs(delta_phi_)
+    if direction_is_backward:
+        val = 0.0
+        for idx in range(n - 2, 0, -1):
+            val += 0.5 * (freq_[idx] + freq_[idx + 1]) * delta_t_
+            if abs(val) >= abs_delta_phi:
+                return idx
+    else:
+        val = 0.0
+        for idx in range(1, n):
+            val += 0.5 * (freq_[idx - 1] + freq_[idx]) * delta_t_
+            if abs(val) >= abs_delta_phi:
+                return idx
+    return -1
+
+
 def _get_window_start(freq_, delta_t_, delta_phi_, direction="forward"):
     """Integrates frequency backward/forward from the start/end until
     `delta_phi_` radians of orbital phase has elapsed.
@@ -478,20 +498,14 @@ def _get_window_start(freq_, delta_t_, delta_phi_, direction="forward"):
     Returns:
         int: Index in frequency array where `delta_phi` is reached
     """
-    from scipy import integrate
-
-    if direction == "backward":
-        for idx in range(len(freq_) - 2, 0, -1):
-            # this could be optimized to not repeat integration
-            if abs(integrate.trapezoid(freq_[idx:], dx=delta_t_)) >= abs(delta_phi_):
-                return idx
-    elif direction == "forward":
-        for idx in range(1, len(freq_)):
-            # this could be optimized to not repeat integration
-            if abs(integrate.trapezoid(freq_[: idx + 1], dx=delta_t_)) >= abs(
-                delta_phi_
-            ):
-                return idx
+    direction_is_backward = direction == "backward"
+    idx = _get_window_start_numba(
+        np.asarray(freq_, dtype=np.float64),
+        float(delta_t_),
+        float(delta_phi_),
+        direction_is_backward,
+    )
+    return idx if idx != -1 else None
 
 
 def _get_transition_frequency_window(
@@ -547,17 +561,12 @@ def _get_transition_frequency_window(
             in the orbital frequency array of length {len(orbital_freq)}""")
 
     if blend_using_avg_orbital_frequency:
-        # We integrate `orbital_freq` to obtain `orbital_phase`
-        from scipy import integrate
-
-        orbital_phase = integrate.cumulative_trapezoid(
-            orbital_freq, dx=delta_t, initial=0
+        # Trapezoidal integration of orbital_freq to get orbital_phase
+        orbital_phase = np.empty(len(orbital_freq))
+        orbital_phase[0] = 0.0
+        orbital_phase[1:] = np.cumsum(
+            0.5 * (orbital_freq[:-1] + orbital_freq[1:]) * delta_t
         )
-        if len(orbital_phase) != len(orbital_freq):
-            raise RuntimeError(
-                f"""Something went wrong while integrating orbital frequency.
-They have different lengths: {len(orbital_freq)} and {len(orbital_phase)}."""
-            )
 
     if keep_f_mr_transition_at_center:
         # Orbital cycle based hybridization that keeps f_mr_transition at
