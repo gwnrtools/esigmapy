@@ -115,6 +115,7 @@ if __name__ == "__main__":
             # 'lalsuite>=6.63',
             "lscsoft_glue>=2.0.0",
             "matplotlib>=2.1",
+            "numba",
             "numpy",
             "pycbc",
             "scipy>=1.2.3",
@@ -122,7 +123,6 @@ if __name__ == "__main__":
         extras_require={
             "surrogate": [
                 "tpi-splines",
-                "numba",
             ],
             "pyseobnr": ["pyseobnr"],
             "dev": [
@@ -130,9 +130,10 @@ if __name__ == "__main__":
                 "pytest",
             ],
             "all": [
-                "tpi-splines",
-                "numba",
+                "black==26.5.1",
                 "pyseobnr",
+                "pytest",
+                "tpi-splines",
             ],
         },
         scripts=[],
