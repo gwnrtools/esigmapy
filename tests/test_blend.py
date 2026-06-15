@@ -342,3 +342,237 @@ class TestBlendModesValidation:
                 modes_to_blend=[(2, 2), (3, 3)],
                 include_conjugate_modes=False,
             )
+
+
+# ---------------------------------------------------------------------------
+# blend_modes — output correctness
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def blend_setup():
+    """Synthetic linear-chirp inspiral + MR modes with a known blending window.
+
+    (2,2) inspiral: 40→160 Hz GW over 500 samples  (orbital: 20→80 Hz)
+    (2,2) MR      : 60→300 Hz GW over 200 samples
+    Attach at 120 Hz ± 10 Hz, using avg orbital frequency.
+    """
+    dt = 1.0 / 4096
+    N_insp, N_mr = 500, 200
+
+    def chirp(N, f0, f1):
+        t = np.arange(N) * dt
+        T = (N - 1) * dt
+        phi = 2 * np.pi * (f0 * t + 0.5 * (f1 - f0) / T * t**2)
+        return np.exp(-1j * phi)
+
+    insp_22 = chirp(N_insp, 40, 160)
+    mr_22 = chirp(N_mr, 60, 300)
+    return {
+        "inspiral_modes": {(2, 2): insp_22, (2, -2): np.conj(insp_22)},
+        "mr_modes": {(2, 2): mr_22, (2, -2): np.conj(mr_22)},
+        "orbital_freq": np.linspace(20, 80, N_insp),
+        "frq_attach": 120.0,
+        "frq_width": 20.0,
+        "dt": dt,
+    }
+
+
+def _run_blend(setup, **overrides):
+    kwargs = dict(
+        modes_to_blend=[(2, 2), (2, -2)],
+        mode_to_align_by=(2, 2),
+        blend_using_avg_orbital_frequency=True,
+        blend_aligning_merger_to_inspiral=True,
+        include_conjugate_modes=False,
+        delta_t=setup["dt"],
+        frq_width=setup["frq_width"],
+    )
+    kwargs.update(overrides)
+    return blend_modes(
+        setup["inspiral_modes"],
+        setup["mr_modes"],
+        setup["orbital_freq"],
+        setup["frq_attach"],
+        **kwargs,
+    )
+
+
+class TestBlendModesOutput:
+    """Correctness tests for blend_modes output values.
+
+    Return tuple layout:
+        [0] hybrid_modes dict
+        [1] t1_index_insp,  [2] t1_index_mr
+        [3] t2_index_insp,  [4] t2_index_mr
+        [5] frq_insp_window, [6] frq_hyb_window, [7] frq_mr_window
+        [8] amp_insp_window, [9] amp_hyb_window,  [10] amp_mr_window
+    """
+
+    def test_return_tuple_length(self, blend_setup):
+        assert len(_run_blend(blend_setup)) == 11
+
+    def test_hybrid_keys_match_modes_to_blend(self, blend_setup):
+        result = _run_blend(blend_setup)
+        assert set(result[0].keys()) == {(2, 2), (2, -2)}
+
+    def test_hybrid_mode_is_ndarray(self, blend_setup):
+        result = _run_blend(blend_setup)
+        assert isinstance(result[0][(2, 2)], np.ndarray)
+
+    # ── inspiral head / MR tail preservation ─────────────────────────────
+
+    def test_inspiral_head_unchanged_when_aligning_mr(self, blend_setup):
+        """Before t1_index_insp the hybrid must equal the inspiral exactly."""
+        result = _run_blend(blend_setup, blend_aligning_merger_to_inspiral=True)
+        hybrid = result[0][(2, 2)]
+        t1_i = result[1]
+        np.testing.assert_array_equal(
+            hybrid[:t1_i], blend_setup["inspiral_modes"][(2, 2)][:t1_i]
+        )
+
+    def test_mr_tail_unchanged_when_aligning_inspiral(self, blend_setup):
+        """After t2_index_mr the MR tail must be unchanged (phase shift lands on inspiral head)."""
+        result = _run_blend(blend_setup, blend_aligning_merger_to_inspiral=False)
+        hybrid = result[0][(2, 2)]
+        t2_mr = result[4]
+        mr = blend_setup["mr_modes"][(2, 2)]
+        np.testing.assert_array_equal(hybrid[-(len(mr) - t2_mr - 1) :], mr[t2_mr + 1 :])
+
+    # ── amplitude correctness ─────────────────────────────────────────────
+
+    def test_window_amplitude_equals_returned_amp_hyb_window(self, blend_setup):
+        """Amplitude of hybrid in the window must equal the returned amp_hyb_window."""
+        result = _run_blend(blend_setup)
+        hybrid = result[0][(2, 2)]
+        t1_i, t2_i = result[1], result[3]
+        amp_hyb_w = result[9][(2, 2)]
+        np.testing.assert_allclose(
+            compute_amplitude(hybrid[t1_i : t2_i + 1]), amp_hyb_w, rtol=1e-12
+        )
+
+    def test_mr_tail_amplitude_unaffected_by_phasor_shift(self, blend_setup):
+        """The constant phasor applied to the MR tail must not change its amplitude."""
+        result = _run_blend(blend_setup, blend_aligning_merger_to_inspiral=True)
+        hybrid = result[0][(2, 2)]
+        t1_i, t2_i, t2_mr = result[1], result[3], result[4]
+        mr = blend_setup["mr_modes"][(2, 2)]
+        hybrid_tail = hybrid[t1_i + (t2_i - t1_i) + 1 :]
+        np.testing.assert_allclose(
+            compute_amplitude(hybrid_tail),
+            compute_amplitude(mr[t2_mr + 1 :]),
+            rtol=1e-12,
+        )
+
+    def test_window_amplitude_starts_at_inspiral_ends_at_mr(self, blend_setup):
+        """blend_series guarantees τ=0 at left → amp_hyb[0]=amp_insp[t1_i]
+        and τ=1 at right → amp_hyb[-1]=amp_mr[t2_mr]."""
+        result = _run_blend(blend_setup)
+        amp_hyb_w = result[9][(2, 2)]
+        amp_insp_w = result[8][(2, 2)]
+        amp_mr_w = result[10][(2, 2)]
+        assert amp_hyb_w[0] == pytest.approx(amp_insp_w[0], rel=1e-12)
+        assert amp_hyb_w[-1] == pytest.approx(amp_mr_w[-1], rel=1e-12)
+
+    # ── phase / frequency correctness ─────────────────────────────────────
+
+    def test_window_phase_is_integral_of_blended_frequency(self, blend_setup):
+        """Core test: phase in the blending window must equal the cumulative
+        trapezoid of frq_hyb_window plus the inspiral angle at window start.
+
+        This directly validates the numpy-cumsum trapezoid integration that
+        replaced scipy.integrate.cumulative_trapezoid.
+        """
+        result = _run_blend(blend_setup)
+        hybrid = result[0][(2, 2)]
+        t1_i, t2_i = result[1], result[3]
+        frq_hyb_w = result[6][(2, 2)]
+        dt = blend_setup["dt"]
+
+        expected = np.empty(len(frq_hyb_w))
+        expected[0] = -np.angle(blend_setup["inspiral_modes"][(2, 2)][t1_i])
+        expected[1:] = expected[0] + 2 * np.pi * np.cumsum(
+            0.5 * (frq_hyb_w[:-1] + frq_hyb_w[1:]) * dt
+        )
+        np.testing.assert_allclose(
+            compute_phase(hybrid[t1_i : t2_i + 1]), expected, rtol=1e-10
+        )
+
+    def test_phase_left_boundary_continuous(self, blend_setup):
+        """Phase of hybrid at t1_i must match inspiral phase at t1_i (no jump)."""
+        result = _run_blend(blend_setup)
+        hybrid = result[0][(2, 2)]
+        t1_i = result[1]
+        insp = blend_setup["inspiral_modes"][(2, 2)]
+        # The window phase is initialised from inspiral_angle_at_window_start
+        assert -np.angle(hybrid[t1_i]) == pytest.approx(
+            -np.angle(insp[t1_i]), abs=1e-12
+        )
+
+    def test_mr_tail_is_constant_phasor_shifted(self, blend_setup):
+        """The MR tail in the hybrid is the original MR tail times a constant
+        phasor — so the ratio hybrid_tail / mr_tail must be constant."""
+        result = _run_blend(blend_setup, blend_aligning_merger_to_inspiral=True)
+        hybrid = result[0][(2, 2)]
+        t1_i, t2_i, t2_mr = result[1], result[3], result[4]
+        mr = blend_setup["mr_modes"][(2, 2)]
+        hybrid_tail = hybrid[t1_i + (t2_i - t1_i) + 1 :]
+        mr_tail = mr[t2_mr + 1 :]
+        if len(mr_tail) == 0:
+            pytest.skip("no MR tail samples")
+        ratio = hybrid_tail / mr_tail
+        np.testing.assert_allclose(np.angle(ratio), np.angle(ratio[0]), atol=1e-10)
+
+    def test_inspiral_head_is_constant_phasor_shifted_when_aligning_inspiral(
+        self, blend_setup
+    ):
+        """When the inspiral is phase-shifted to match MR, the head is multiplied
+        by a constant phasor — ratio hybrid_head / inspiral_head must be constant."""
+        result = _run_blend(blend_setup, blend_aligning_merger_to_inspiral=False)
+        hybrid = result[0][(2, 2)]
+        t1_i = result[1]
+        insp = blend_setup["inspiral_modes"][(2, 2)]
+        if t1_i == 0:
+            pytest.skip("no inspiral head samples")
+        ratio = hybrid[:t1_i] / insp[:t1_i]
+        np.testing.assert_allclose(np.angle(ratio), np.angle(ratio[0]), atol=1e-10)
+
+    def test_blended_frequency_starts_at_inspiral_ends_at_mr(self, blend_setup):
+        """At τ=0 frq_hyb == frq_insp; at τ=1 frq_hyb == frq_mr."""
+        result = _run_blend(blend_setup)
+        frq_i_w = result[5][(2, 2)]
+        frq_h_w = result[6][(2, 2)]
+        frq_mr_w = result[7][(2, 2)]
+        assert frq_h_w[0] == pytest.approx(frq_i_w[0], rel=1e-12)
+        assert frq_h_w[-1] == pytest.approx(frq_mr_w[-1], rel=1e-12)
+
+    # ── both alignment directions ─────────────────────────────────────────
+
+    def test_align_inspiral_to_mr_produces_valid_output(self, blend_setup):
+        """blend_aligning_merger_to_inspiral=False must complete and return modes."""
+        result = _run_blend(blend_setup, blend_aligning_merger_to_inspiral=False)
+        assert (2, 2) in result[0]
+        assert len(result[0][(2, 2)]) > 0
+
+    def test_window_phase_integral_correct_when_aligning_inspiral(self, blend_setup):
+        """Same phase-integral check for the align-inspiral-to-MR branch."""
+        result = _run_blend(blend_setup, blend_aligning_merger_to_inspiral=False)
+        hybrid = result[0][(2, 2)]
+        t1_i, t2_i = result[1], result[3]
+        frq_hyb_w = result[6][(2, 2)]
+        dt = blend_setup["dt"]
+
+        # In this branch, phase_h is offset so the window *ends* at mr_angle_at_window_end
+        mr_angle_end = -np.angle(blend_setup["mr_modes"][(2, 2)][result[4]])
+        raw_integral = (
+            2
+            * np.pi
+            * np.cumsum(
+                np.concatenate([[0], 0.5 * (frq_hyb_w[:-1] + frq_hyb_w[1:]) * dt])
+            )
+        )
+        offset = mr_angle_end - raw_integral[-1]
+        expected = raw_integral + offset
+        np.testing.assert_allclose(
+            compute_phase(hybrid[t1_i : t2_i + 1]), expected, rtol=1e-10
+        )

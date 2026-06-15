@@ -35,6 +35,13 @@ def find_first_value_location_in_series(frq_timeseries, frq_desired):
     if frq_desired > np.max(frq_timeseries):
         raise Exception("Desired frequency out of bounds, higher than max frequency")
 
+    """
+    We traverse the array to find the location where the i_th value is less than
+    the desired value while the i+1_th value is more, hence locating the desired
+    value somewhere between those two points. We then choose the value closer to
+    the value desired (among i and i+1) and call it the location of the desired
+    value.
+    """
     idx = _find_first_value_location_in_series_numba(
         np.asarray(frq_timeseries, dtype=np.float64),
         float(frq_desired),
@@ -47,20 +54,16 @@ def find_first_value_location_in_series(frq_timeseries, frq_desired):
 @njit
 def _find_last_value_location_in_series_numba(frq_timeseries, frq_desired):
     n = len(frq_timeseries)
-    final_idx = n - 1
-    for idx in range(n - 1):
-        val1 = frq_timeseries[n - 1 - idx]
-        val2 = frq_timeseries[n - 2 - idx]
+    for off in range(n - 1):
+        i1 = n - 1 - off
+        i2 = n - 2 - off
+        val1 = frq_timeseries[i1]
+        val2 = frq_timeseries[i2]
         if val1 >= frq_desired and val2 <= frq_desired:
-            if abs(frq_desired - val1) <= abs(frq_desired - val2):
-                final_idx = idx
-            else:
-                final_idx = idx + 1
-            break
-    return n - 1 - final_idx
+            return i1 if abs(frq_desired - val1) <= abs(frq_desired - val2) else i2
+    return -1
 
 
-# Akash: Can use @njit here, but numba is not a dependency of default ESIGMAPy currently
 def find_last_value_location_in_series(frq_timeseries, frq_desired):
     if frq_desired < np.min(frq_timeseries):
         raise Exception(
@@ -72,10 +75,20 @@ def find_last_value_location_in_series(frq_timeseries, frq_desired):
             f"""Desired value {frq_desired} out of bounds, higher than max value {np.max(frq_timeseries)}"""
         )
 
-    return _find_last_value_location_in_series_numba(
+    """
+    We traverse the array in reverse to find the location where the i_th value
+    is more than the desired value while the i+1_th value is less, hence locating
+    the desired value somewhere between those two points. We then choose the
+    value closer to the value desired (among i and i+1) and call it the location
+    of the desired value.
+    """
+    idx = _find_last_value_location_in_series_numba(
         np.asarray(frq_timeseries, dtype=np.float64),
         float(frq_desired),
     )
+    if idx < 0:
+        raise ValueError("Desired frequency bracket not found in timeseries")
+    return idx
 
 
 @njit
