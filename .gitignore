@@ -18,3 +18,4 @@ venv/
 
 # VS Code settings
 .vscode/
+tests/perf/results/
