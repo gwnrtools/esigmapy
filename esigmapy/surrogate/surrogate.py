@@ -214,6 +214,71 @@ def _unwrap_single_float(val):
         )
 
 
+def _construct_tp_knots(nodes):
+    """Clamped cubic knot vector for TPI's not-a-knot B-spline over ``nodes``:
+    three repeats of the first node, the nodes, three repeats of the last.
+    Matches TPI's construction so the coefficient tensor (len(nodes)+2 per axis)
+    is interpreted identically."""
+    nodes = np.asarray(nodes, dtype=np.float64)
+    return np.concatenate(
+        (np.repeat(nodes[:1], 3), nodes, np.repeat(nodes[-1:], 3))
+    )
+
+
+def _stacked_tp3d_eval(knots0, knots1, knots2, coeffs, points):
+    """Evaluate a stack of ``M`` 3D cubic tensor-product splines, one per fit,
+    each at its own point.
+
+    knots{0,1,2} : (M, n_a + 6) clamped knot vectors per axis (nodes = knots[3:-3]).
+    coeffs       : (M, n0+2, n1+2, n2+2) coefficient tensors.
+    points       : (M, 3) evaluation points.
+
+    Returns (M,) values. This is a vectorized numpy transcription of TPI's
+    cubic de Boor evaluation (same algorithm as the Cython/JAX backends), so a
+    Python loop over M scalar TPI calls collapses to a handful of array ops.
+    """
+    offsets = np.arange(-2, 4)
+    starts = []
+    bases = []
+    for axis, knots in enumerate((knots0, knots1, knots2)):
+        x = points[:, axis]
+        nodes = knots[:, 3:-3]
+        n_a = nodes.shape[1]
+        count = np.sum(nodes <= x[:, None], axis=1)
+        span = np.clip(count + 2, 3, n_a + 1)
+        k = np.take_along_axis(knots, span[:, None] + offsets[None, :], axis=1)
+        l1 = x - k[:, 2]
+        l2 = x - k[:, 1]
+        l3 = x - k[:, 0]
+        r1 = k[:, 3] - x
+        r2 = k[:, 4] - x
+        r3 = k[:, 5] - x
+
+        def sd(num, den):
+            return np.divide(num, den, out=np.zeros_like(num), where=den != 0.0)
+
+        b0 = sd(r1, r1 + l1)
+        b1 = sd(l1, r1 + l1)
+        q0 = r1 * sd(b0, r1 + l2)
+        q1 = l2 * sd(b0, r1 + l2) + r2 * sd(b1, r2 + l1)
+        q2 = l1 * sd(b1, r2 + l1)
+        d0 = r1 * sd(q0, r1 + l3)
+        d1 = l3 * sd(q0, r1 + l3) + r2 * sd(q1, r2 + l2)
+        d2 = l2 * sd(q1, r2 + l2) + r3 * sd(q2, r3 + l1)
+        d3 = l1 * sd(q2, r3 + l1)
+        bases.append(np.stack((d0, d1, d2, d3), axis=1))
+        starts.append(span - 3)
+
+    M = coeffs.shape[0]
+    ar = np.arange(4)
+    m_idx = np.arange(M)[:, None, None, None]
+    i0 = (starts[0][:, None] + ar)[:, :, None, None]
+    i1 = (starts[1][:, None] + ar)[:, None, :, None]
+    i2 = (starts[2][:, None] + ar)[:, None, None, :]
+    block = coeffs[m_idx, i0, i1, i2]
+    return np.einsum("mabc,ma,mb,mc->m", block, bases[0], bases[1], bases[2])
+
+
 class Surrogate:
     def __init__(self, data_dir):
         # The directory where the surrogate data is stored
@@ -528,27 +593,59 @@ class EccentricSurrogate(Surrogate):
         return sorted_filenames
 
     @staticmethod
-    def load_fit(filepath):
+    def _read_fit_raw(filepath):
         with h5py.File(filepath, "r") as f:
-            nodes = f["nodes"][()]
-            coeffs = f["coefficients"][()]
-        fit = TPI.TP_Interpolant_ND(list(nodes), coeffs=coeffs)
-        return fit
+            nodes = [np.asarray(n, dtype=np.float64) for n in f["nodes"][()]]
+            coeffs = np.asarray(f["coefficients"][()], dtype=np.float64)
+        return nodes, coeffs
+
+    @staticmethod
+    def load_fit(filepath):
+        nodes, coeffs = EccentricSurrogate._read_fit_raw(filepath)
+        return TPI.TP_Interpolant_ND(nodes, coeffs=coeffs)
+
+    @staticmethod
+    def _build_stacked_fit(nodes_list, coeffs_list):
+        """Stack per-fit (nodes, coeffs) -- all sharing the same per-axis node
+        counts -- into knot/coeff arrays for `_stacked_tp3d_eval`."""
+        n_axes = len(nodes_list[0])
+        knots = [
+            np.stack([_construct_tp_knots(nl[axis]) for nl in nodes_list])
+            for axis in range(n_axes)
+        ]
+        coeffs = np.stack(coeffs_list)
+        return {"knots": knots, "coeffs": coeffs}
 
     def load_param_space_fits(self, verbose=False):
+        # Pieces whose per-fit scalar TPI evaluations are replaced by a single
+        # vectorized stacked evaluation (`_stacked_tp3d_eval`) on the hot path.
+        stacked_pieces = {"res_amp", "res_phase"}
+        self.stacked_fit = {}
+
         for data_piece_name in self.data_piece_names:
             load_dir = os.path.join(self.sur_dir, f"fits/{data_piece_name}_fits")
             # List of all the files which end in .h5
             filenames = [f for f in os.listdir(load_dir) if f.endswith(".h5")]
             sorted_filenames = self._get_sorted_fit_filenames(filenames=filenames)
             self.fit[data_piece_name] = []
+            nodes_list = []
+            coeffs_list = []
 
             for filename in sorted_filenames:
                 filepath = os.path.join(load_dir, filename)
                 if verbose:
                     print(f"Loading spline interpolant of GPR from {filename}...")
-                fit = self.load_fit(filepath)
-                self.fit[data_piece_name].append(fit)
+                nodes, coeffs = self._read_fit_raw(filepath)
+                self.fit[data_piece_name].append(
+                    TPI.TP_Interpolant_ND(nodes, coeffs=coeffs)
+                )
+                nodes_list.append(nodes)
+                coeffs_list.append(coeffs)
+
+            if data_piece_name in stacked_pieces:
+                self.stacked_fit[data_piece_name] = self._build_stacked_fit(
+                    nodes_list, coeffs_list
+                )
 
         filepath = os.path.join(
             self.sur_dir, f"fits/mean_anomaly_offset-ref_space-3D-fit_spline.h5"
@@ -653,17 +750,22 @@ class EccentricSurrogate(Surrogate):
             + mean_anomaly_offset_of_shifted_mean_anomaly
         ) % (2 * np.pi)
 
-        res_amp_node_vals = np.asarray(
-            [
-                self.fit["res_amp"][i]([eta, e_eim_res_amp[i], l_eim_res_amp[i]])
-                for i in range(len(self.fit["res_amp"]))
-            ]
+        res_amp_points = np.empty((e_eim_res_amp.shape[0], 3))
+        res_amp_points[:, 0] = eta
+        res_amp_points[:, 1] = e_eim_res_amp
+        res_amp_points[:, 2] = l_eim_res_amp
+        sa = self.stacked_fit["res_amp"]
+        res_amp_node_vals = _stacked_tp3d_eval(
+            sa["knots"][0], sa["knots"][1], sa["knots"][2], sa["coeffs"], res_amp_points
         )
-        res_phase_node_vals = np.asarray(
-            [
-                self.fit["res_phase"][i]([eta, e_eim_res_phase[i], l_eim_res_phase[i]])
-                for i in range(len(self.fit["res_phase"]))
-            ]
+
+        res_phase_points = np.empty((e_eim_res_phase.shape[0], 3))
+        res_phase_points[:, 0] = eta
+        res_phase_points[:, 1] = e_eim_res_phase
+        res_phase_points[:, 2] = l_eim_res_phase
+        sp = self.stacked_fit["res_phase"]
+        res_phase_node_vals = _stacked_tp3d_eval(
+            sp["knots"][0], sp["knots"][1], sp["knots"][2], sp["coeffs"], res_phase_points
         )
         res_circ_phase_node_vals = np.asarray(
             [
