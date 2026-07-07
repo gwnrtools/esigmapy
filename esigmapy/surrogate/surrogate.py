@@ -132,6 +132,77 @@ def _uniform_grid_scalars(grid, start_idx):
     return g0, dg
 
 
+@njit(fastmath=True, cache=True, inline="always")
+def _lerp_uniform(x, g0, inv_dg, table, last):
+    """Linear interpolation of ``table`` (on a uniform grid ``g0`` with spacing
+    ``1/inv_dg``) at query ``x``, with np.interp boundary clamping."""
+    pos = (x - g0) * inv_dg
+    if pos <= 0.0:
+        return table[0]
+    if pos >= last:
+        return table[last]
+    idx = int(pos)
+    w = pos - idx
+    return table[idx] + w * (table[idx + 1] - table[idx])
+
+
+@njit(fastmath=True, cache=True)
+def _fused_ecc_mode_uniform(
+    tg0, tdg, lt_relation, q0, dq, n_out, lg0, ldg,
+    damp, dphase, rcp, amp0, phase0, amp_scale, remove_phase0,
+):
+    """Single-pass eccentric final stage.
+
+    For each uniform output sample the mean-anomaly ``l_s`` is interpolated from
+    ``lt_relation`` on the uniform (scaled) time grid, then the three residual
+    data pieces (delta amplitude, delta phase, residual circular phase) are
+    interpolated from that ``l_s`` on the uniform mean-anomaly grid -- the
+    index/weight into the l-grid is computed once and shared by all three. The
+    circular baseline (``amp0``/``phase0``) is combined in, the initial phase is
+    optionally removed, and the complex mode is assembled, all in one pass over
+    the output grid instead of four np.interp calls plus several full-size
+    temporaries.
+    """
+    last_t = lt_relation.shape[0] - 1
+    inv_tdg = 1.0 / tdg
+    last_l = damp.shape[0] - 1
+    inv_ldg = 1.0 / ldg
+    out = np.empty(n_out, dtype=np.complex128)
+
+    if remove_phase0:
+        ls0 = _lerp_uniform(q0, tg0, inv_tdg, lt_relation, last_t)
+        phase0_ref = (
+            phase0[0]
+            + _lerp_uniform(ls0, lg0, inv_ldg, rcp, last_l)
+            + _lerp_uniform(ls0, lg0, inv_ldg, dphase, last_l)
+        )
+    else:
+        phase0_ref = 0.0
+
+    for i in range(n_out):
+        ls = _lerp_uniform(q0 + i * dq, tg0, inv_tdg, lt_relation, last_t)
+        # Shared l-grid position for the three residual pieces.
+        lpos = (ls - lg0) * inv_ldg
+        if lpos <= 0.0:
+            dA = damp[0]
+            dP = dphase[0]
+            rcpi = rcp[0]
+        elif lpos >= last_l:
+            dA = damp[last_l]
+            dP = dphase[last_l]
+            rcpi = rcp[last_l]
+        else:
+            j = int(lpos)
+            w = lpos - j
+            dA = damp[j] + w * (damp[j + 1] - damp[j])
+            dP = dphase[j] + w * (dphase[j + 1] - dphase[j])
+            rcpi = rcp[j] + w * (rcp[j + 1] - rcp[j])
+        amp = amp0[i] + amp_scale * dA
+        ph = phase0[i] + rcpi + dP - phase0_ref
+        out[i] = amp * (np.cos(ph) - 1j * np.sin(ph))
+    return out
+
+
 def _unwrap_single_float(val):
     if isinstance(val, (float, int, np.floating, np.integer)):
         return float(val)
@@ -511,7 +582,8 @@ class EccentricSurrogate(Surrogate):
         start_idx_t = self._find_conservative_starting_truncation_index(
             grid=t_grid_sur, val=t_start / mass_scaling_factor
         )
-        t_grid_sur = t_grid_sur[start_idx_t:] * mass_scaling_factor
+        # t_grid_sur stays the full native grid here; the scaled/truncated array
+        # is only materialized on the generic (non-fused) path below.
 
         if times is None:
             num_samples = int((t_end - t_start) / delta_t) + 1
@@ -615,7 +687,6 @@ class EccentricSurrogate(Surrogate):
         start_idx_l = self._find_conservative_starting_truncation_index(
             grid=l_grid_sur, val=l_start
         )
-        l_grid_sur = l_grid_sur[start_idx_l:]
 
         delta_amp_native = self.norm_factor["res_amp"] * np.dot(
             res_amp_node_vals, self.eim_B["res_amp"][:, start_idx_l:]
@@ -627,12 +698,33 @@ class EccentricSurrogate(Surrogate):
             res_circ_phase_node_vals, self.eim_B["res_circ_phase"][:, start_idx_l:]
         )
 
+        amp_scale = mass_scaling_factor / _amp_correction_factor
+
+        # Fast path: for a uniform output grid the l_s interpolation, the three
+        # residual-piece interpolations (sharing one l-grid index/weight), the
+        # circular-baseline combination, initial-phase removal, and complex-mode
+        # assembly are fused into a single pass. See _fused_ecc_mode_uniform.
+        if times is None and not return_orbital_variables:
+            tg0, tdg = _uniform_grid_scalars(t_grid_sur, start_idx_t)
+            tg0 *= mass_scaling_factor
+            tdg *= mass_scaling_factor
+            lg0, ldg = _uniform_grid_scalars(l_grid_sur, start_idx_l)
+            return new_t_grid, _fused_ecc_mode_uniform(
+                tg0, tdg, lt_relation, t_start, delta_t, num_samples,
+                lg0, ldg, delta_amp_native, delta_phase_native,
+                res_circ_phase_native, amp0_, phase0_, amp_scale,
+                remove_start_phase,
+            )
+
+        t_grid_sur = t_grid_sur[start_idx_t:] * mass_scaling_factor
+        l_grid_sur = l_grid_sur[start_idx_l:]
+
         l_s = np.interp(new_t_grid, t_grid_sur, lt_relation)
         delta_A = np.interp(l_s, l_grid_sur, delta_amp_native)
         delta_phi = np.interp(l_s, l_grid_sur, delta_phase_native)
         res_circ_phi = np.interp(l_s, l_grid_sur, res_circ_phase_native)
 
-        delta_A *= mass_scaling_factor / _amp_correction_factor
+        delta_A *= amp_scale
         amp = amp0_ + delta_A
         phase = phase0_ + res_circ_phi + delta_phi
         if remove_start_phase:
