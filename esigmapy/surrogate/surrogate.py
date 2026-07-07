@@ -24,6 +24,114 @@ def mode_from_amp_phase(amp, phase):
     return amp * np.exp(-1j * phase)
 
 
+@njit(fastmath=True, cache=True)
+def _fused_interp_mode_uniform(
+    g0, dg, amp_table, phase_table, q0, dq, n_out, amp_scale, remove_phase0
+):
+    """Single-pass amp/phase interpolation onto a uniform output grid, followed
+    by amplitude scaling, optional initial-phase removal, and complex-mode
+    assembly ``amp * exp(-1j*phase)``.
+
+    Both the native (source) grid and the output/query grid are uniform, so the
+    source index is found by arithmetic instead of a binary search. ``np.interp``
+    boundary clamping is reproduced exactly: queries at or beyond the grid ends
+    take the boundary table value. Fusing all steps writes the large output
+    array once and reads the source tables once, avoiding the several full-size
+    temporaries of the ``np.interp`` -> ``*=`` -> ``exp`` pipeline.
+    """
+    ntab = amp_table.shape[0]
+    last = ntab - 1
+    inv_dg = 1.0 / dg
+    out = np.empty(n_out, dtype=np.complex128)
+
+    if remove_phase0:
+        pos0 = (q0 - g0) * inv_dg
+        if pos0 <= 0.0:
+            phase0 = phase_table[0]
+        elif pos0 >= last:
+            phase0 = phase_table[last]
+        else:
+            i0 = int(pos0)
+            w0 = pos0 - i0
+            phase0 = phase_table[i0] + w0 * (phase_table[i0 + 1] - phase_table[i0])
+    else:
+        phase0 = 0.0
+
+    for i in range(n_out):
+        pos = (q0 + i * dq - g0) * inv_dg
+        if pos <= 0.0:
+            a = amp_table[0]
+            ph = phase_table[0]
+        elif pos >= last:
+            a = amp_table[last]
+            ph = phase_table[last]
+        else:
+            idx = int(pos)
+            w = pos - idx
+            a = amp_table[idx] + w * (amp_table[idx + 1] - amp_table[idx])
+            ph = phase_table[idx] + w * (phase_table[idx + 1] - phase_table[idx])
+        a *= amp_scale
+        ph -= phase0
+        out[i] = a * (np.cos(ph) - 1j * np.sin(ph))
+    return out
+
+
+@njit(fastmath=True, cache=True)
+def _fused_interp_amp_phase_uniform(
+    g0, dg, amp_table, phase_table, q0, dq, n_out, amp_scale, remove_phase0
+):
+    """As ``_fused_interp_mode_uniform`` but returns the scaled ``(amp, phase)``
+    arrays instead of the complex mode (the ``return_amp_phase_only`` path)."""
+    ntab = amp_table.shape[0]
+    last = ntab - 1
+    inv_dg = 1.0 / dg
+    amp = np.empty(n_out, dtype=np.float64)
+    phase = np.empty(n_out, dtype=np.float64)
+
+    if remove_phase0:
+        pos0 = (q0 - g0) * inv_dg
+        if pos0 <= 0.0:
+            phase0 = phase_table[0]
+        elif pos0 >= last:
+            phase0 = phase_table[last]
+        else:
+            i0 = int(pos0)
+            w0 = pos0 - i0
+            phase0 = phase_table[i0] + w0 * (phase_table[i0 + 1] - phase_table[i0])
+    else:
+        phase0 = 0.0
+
+    for i in range(n_out):
+        pos = (q0 + i * dq - g0) * inv_dg
+        if pos <= 0.0:
+            a = amp_table[0]
+            ph = phase_table[0]
+        elif pos >= last:
+            a = amp_table[last]
+            ph = phase_table[last]
+        else:
+            idx = int(pos)
+            w = pos - idx
+            a = amp_table[idx] + w * (amp_table[idx + 1] - amp_table[idx])
+            ph = phase_table[idx] + w * (phase_table[idx + 1] - phase_table[idx])
+        amp[i] = a * amp_scale
+        phase[i] = ph - phase0
+    return amp, phase
+
+
+def _uniform_grid_scalars(grid, start_idx):
+    """First value and best-fit uniform spacing of ``grid[start_idx:]``.
+
+    The spacing is taken as the average over the retained span (endpoints /
+    count) rather than a single local difference, which minimizes drift of the
+    arithmetic index ``(query - g0) / dg`` accumulated over long output grids.
+    """
+    last = grid.shape[0] - 1
+    g0 = grid[start_idx]
+    dg = (grid[last] - g0) / (last - start_idx)
+    return g0, dg
+
+
 def _unwrap_single_float(val):
     if isinstance(val, (float, int, np.floating, np.integer)):
         return float(val)
@@ -182,7 +290,6 @@ class CircularSurrogate(Surrogate):
         start_idx = self._find_conservative_starting_truncation_index(
             grid=t_grid_sur, val=t_start / mass_scaling_factor
         )
-        t_grid_sur = t_grid_sur[start_idx:] * mass_scaling_factor
 
         if times is None:
             num_samples = int((t_end - t_start) / delta_t) + 1
@@ -205,12 +312,35 @@ class CircularSurrogate(Surrogate):
             phase_node_vals, self.eim_B["phase"][:, start_idx:]
         )
 
+        amp_scale = (
+            mass_scaling_factor / _amp_correction_factor
+        )  # Correcting for the amplitude normalization factor that was off in the surrogate files.
+
+        # Fast path: for a uniform output grid (times is None) the amp/phase
+        # interpolation, amplitude scaling, optional initial-phase removal, and
+        # complex-mode assembly are fused into a single pass over the output
+        # grid. Both the native and output grids are uniform, so interpolation
+        # uses index arithmetic. When the caller supplies arbitrary `times`, the
+        # generic np.interp path below is used instead.
+        if times is None and not return_orbital_variables:
+            g0, dg = _uniform_grid_scalars(t_grid_sur, start_idx)
+            g0 *= mass_scaling_factor
+            dg *= mass_scaling_factor
+            if return_amp_phase_only:
+                return _fused_interp_amp_phase_uniform(
+                    g0, dg, amp_native, phase_native, t_start, delta_t,
+                    num_samples, amp_scale, remove_initial_phase,
+                )
+            return new_t_grid, _fused_interp_mode_uniform(
+                g0, dg, amp_native, phase_native, t_start, delta_t,
+                num_samples, amp_scale, remove_initial_phase,
+            )
+
+        t_grid_sur = t_grid_sur[start_idx:] * mass_scaling_factor
         amp = np.interp(new_t_grid, t_grid_sur, amp_native)
         phase = np.interp(new_t_grid, t_grid_sur, phase_native)
 
-        amp *= (
-            mass_scaling_factor / _amp_correction_factor
-        )  # Correcting for the amplitude normalization factor that was off in the surrogate files.
+        amp *= amp_scale
 
         if remove_initial_phase:
             phase -= phase[0]
@@ -393,13 +523,17 @@ class EccentricSurrogate(Surrogate):
         self.check_param_range(q=q, e_ref=e_ref, l_ref=l_ref)
 
         if e_ref > self.e_ref_min:
+            # Pass times=None (with delta_t/t_start/t_end) when this call built
+            # the output grid itself, so the circular surrogate rebuilds the
+            # bitwise-identical uniform grid and takes its fused fast path. Only
+            # forward an explicit `times` array when the caller supplied one.
             amp0_, phase0_ = self.circ_sur(
                 M=M,
                 q=q,
                 delta_t=delta_t,
                 t_start=t_start,
                 t_end=t_end,
-                times=new_t_grid,
+                times=(None if times is None else new_t_grid),
                 remove_initial_phase=True,
                 return_amp_phase_only=True,
                 return_orbital_variables=False,
