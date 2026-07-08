@@ -339,7 +339,15 @@ def _circ_amp_phase(
 def _tp3d_point(k0, k1, k2, coeffs, x):
     """Evaluate one 3D cubic tensor-product spline (nodes = knots[3:-3]) at the
     length-3 point ``x``. ``coeffs`` has shape (n0+2, n1+2, n2+2). Vectorized
-    over a stack of fits via ``_tp3d_stacked``."""
+    over a stack of fits via ``_tp3d_stacked``.
+
+    The de Boor recurrence is unrolled by hand rather than delegated to
+    ``TPI_jax._find_active_cubic_bspline_span_jax``: that kernel builds the
+    basis with a dynamic-bound ``lax.fori_loop``, which reverse-mode
+    differentiation (``jax.grad``) cannot trace through, and grad-ability over
+    the waveform parameters is a design goal of this backend. (TPI_jax's own
+    vector-interpolant evaluator, used for the shared-node pieces, unrolls the
+    recurrence the same way and is grad-safe.)"""
     starts = []
     bases = []
     for axis, knots in enumerate((k0, k1, k2)):
