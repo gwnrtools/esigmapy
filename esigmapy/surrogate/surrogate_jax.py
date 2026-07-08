@@ -402,20 +402,24 @@ class EccentricSurrogateJAX:
     * the pieces sharing one grid and evaluated at the reference point
       [eta, e_ref, l_ref] (e, res_circ_phase, shifted_mean_anomaly,
       mean_anomaly_offset, x) are combined into ONE
-      ``TP_Interpolant_ND_Vector`` via ``FromComponentSplines`` (26 components);
-    * res_amp (36) and res_phase (21), whose fits have different nodes and their
-      own evaluation points, are stacked and evaluated with a ``vmap`` over
+      ``TP_Interpolant_ND_Vector`` via ``FromComponentSplines``;
+    * res_amp and res_phase, whose fits have different nodes and their own
+      evaluation points, are stacked and evaluated with a ``vmap`` over
       ``_tp3d_point``.
     """
 
-    # component layout of the shared reference-point vector interpolant
-    _SHARED_ORDER = [
-        ("e", 7),
-        ("res_circ_phase", 4),
-        ("shifted_mean_anomaly", 7),
-        ("mean_anomaly_offset", 1),
-        ("x", 7),
-    ]
+    # Order of the data pieces stacked into the shared reference-point vector
+    # interpolant. Per-piece component counts are NOT hard-coded: they are
+    # inferred in _load from the number of fit files each piece provides (and
+    # cross-checked against the piece's EIM basis count), so a change to the
+    # underlying surrogate data does not require editing this class.
+    _SHARED_PIECES = (
+        "e",
+        "res_circ_phase",
+        "shifted_mean_anomaly",
+        "mean_anomaly_offset",
+        "x",
+    )
 
     def __init__(self, ecc_data_dir, circ_data_dir):
         self.sur_dir = ecc_data_dir
@@ -469,10 +473,10 @@ class EccentricSurrogateJAX:
         ei.close()
 
         # e-EIM columns and l-grid values at the EIM nodes (precomputed).
-        self.eim_e_ra = self.eim_B["e"][:, self.ei_res_amp]  # (7, 36)
-        self.eim_e_rp = self.eim_B["e"][:, self.ei_res_phase]  # (7, 21)
-        self.l_grid_ra = jnp.asarray(self.l_grid_sur[self.ei_res_amp])  # (36,)
-        self.l_grid_rp = jnp.asarray(self.l_grid_sur[self.ei_res_phase])  # (21,)
+        self.eim_e_ra = self.eim_B["e"][:, self.ei_res_amp]  # (n_e, n_ra)
+        self.eim_e_rp = self.eim_B["e"][:, self.ei_res_phase]  # (n_e, n_rp)
+        self.l_grid_ra = jnp.asarray(self.l_grid_sur[self.ei_res_amp])  # (n_ra,)
+        self.l_grid_rp = jnp.asarray(self.l_grid_sur[self.ei_res_phase])  # (n_rp,)
 
         # Parameter-space fits: read each piece's per-fit (nodes, coeffs).
         raw_nodes = {}
@@ -496,13 +500,21 @@ class EccentricSurrogateJAX:
             mao_coeffs = np.asarray(f["coefficients"][()], dtype=np.float64)
 
         # Shared-node vector interpolant via FromComponentSplines (one-time
-        # setup): e (7), res_circ_phase (4), shifted_mean_anomaly (7),
-        # mean_anomaly_offset (1), x (7), all on the common reference grid.
+        # setup): the _SHARED_PIECES, all on the common reference grid. Each
+        # piece contributes as many components as it has fits on disk; for the
+        # pieces with an EIM basis the two counts must agree.
         raw_coeffs["mean_anomaly_offset"] = [mao_coeffs]
         components = []
         self._shared_slices = {}
         offset = 0
-        for name, count in self._SHARED_ORDER:
+        for name in self._SHARED_PIECES:
+            count = len(raw_coeffs[name])
+            if name in self.eim_B and self.eim_B[name].shape[0] != count:
+                raise ValueError(
+                    f"Data piece '{name}': {count} parameter-space fits on "
+                    f"disk but the EIM basis has {self.eim_B[name].shape[0]} "
+                    "rows; the surrogate data is inconsistent."
+                )
             self._shared_slices[name] = slice(offset, offset + count)
             components.extend(raw_coeffs[name])
             offset += count
@@ -606,20 +618,20 @@ class EccentricSurrogateJAX:
             amp_scale,
             with_orbital,
         ):
-            shared = vec.TPInterpolationND(jnp.array([eta, e_ref, l_ref]))  # (26,)
+            shared = vec.TPInterpolationND(jnp.array([eta, e_ref, l_ref]))
             e_nodes = shared[s_amp]
             rcp_nodes = shared[s_rcp]
             sma_nodes = shared[s_sma]
             mao = shared[s_mao][0]
 
-            e_eim_ra = e_nodes @ eim_e_ra  # (36,)
-            e_eim_rp = e_nodes @ eim_e_rp  # (21,)
+            e_eim_ra = e_nodes @ eim_e_ra  # (n_ra,)
+            e_eim_rp = e_nodes @ eim_e_rp  # (n_rp,)
             l_eim_ra = jnp.mod(l_grid_ra + mao, _TWO_PI)
             l_eim_rp = jnp.mod(l_grid_rp + mao, _TWO_PI)
             eta_ra = jnp.full_like(e_eim_ra, eta)
             eta_rp = jnp.full_like(e_eim_rp, eta)
-            ra_pts = jnp.stack((eta_ra, e_eim_ra, l_eim_ra), axis=1)  # (36, 3)
-            rp_pts = jnp.stack((eta_rp, e_eim_rp, l_eim_rp), axis=1)  # (21, 3)
+            ra_pts = jnp.stack((eta_ra, e_eim_ra, l_eim_ra), axis=1)  # (n_ra, 3)
+            rp_pts = jnp.stack((eta_rp, e_eim_rp, l_eim_rp), axis=1)  # (n_rp, 3)
             ra_nodes = _tp3d_stacked(ra_k0, ra_k1, ra_k2, ra_c, ra_pts)
             rp_nodes = _tp3d_stacked(rp_k0, rp_k1, rp_k2, rp_c, rp_pts)
 
