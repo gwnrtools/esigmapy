@@ -279,6 +279,55 @@ def _stacked_tp3d_eval(knots0, knots1, knots2, coeffs, points):
     return np.einsum("mabc,ma,mb,mc->m", block, bases[0], bases[1], bases[2])
 
 
+def _shared_node_tp3d_eval(knots0, knots1, knots2, coeffs, point):
+    """Evaluate ``N`` 3D cubic tensor-product splines that share the same nodes,
+    all at the same ``point``.
+
+    knots{0,1,2} : (n_a + 6,) clamped knot vectors per axis (shared).
+    coeffs       : (N, n0+2, n1+2, n2+2) stacked coefficient tensors.
+    point        : (3,) evaluation point.
+
+    The span search and cubic basis are computed once (scalar) and contracted
+    against every component's coefficient block, so N fits on a shared grid at a
+    shared point cost one basis evaluation plus one contraction -- versus one
+    scalar TPI call per fit.
+    """
+    starts = []
+    bases = []
+    for axis, knots in enumerate((knots0, knots1, knots2)):
+        x = float(point[axis])
+        nodes = knots[3:-3]
+        n_a = nodes.shape[0]
+        count = int(np.searchsorted(nodes, x, side="right"))
+        span = min(max(count + 2, 3), n_a + 1)
+        k = knots[span - 2 : span + 4]
+        l1 = x - k[2]
+        l2 = x - k[1]
+        l3 = x - k[0]
+        r1 = k[3] - x
+        r2 = k[4] - x
+        r3 = k[5] - x
+
+        def sd(num, den):
+            return num / den if den != 0.0 else 0.0
+
+        b0 = sd(r1, r1 + l1)
+        b1 = sd(l1, r1 + l1)
+        q0 = r1 * sd(b0, r1 + l2)
+        q1 = l2 * sd(b0, r1 + l2) + r2 * sd(b1, r2 + l1)
+        q2 = l1 * sd(b1, r2 + l1)
+        d0 = r1 * sd(q0, r1 + l3)
+        d1 = l3 * sd(q0, r1 + l3) + r2 * sd(q1, r2 + l2)
+        d2 = l2 * sd(q1, r2 + l2) + r3 * sd(q2, r3 + l1)
+        d3 = l1 * sd(q2, r3 + l1)
+        bases.append(np.array([d0, d1, d2, d3]))
+        starts.append(span - 3)
+
+    s0, s1, s2 = starts
+    block = coeffs[:, s0 : s0 + 4, s1 : s1 + 4, s2 : s2 + 4]
+    return np.einsum("nabc,a,b,c->n", block, bases[0], bases[1], bases[2])
+
+
 class Surrogate:
     def __init__(self, data_dir):
         # The directory where the surrogate data is stored
@@ -617,10 +666,12 @@ class EccentricSurrogate(Surrogate):
         return {"knots": knots, "coeffs": coeffs}
 
     def load_param_space_fits(self, verbose=False):
-        # Pieces whose per-fit scalar TPI evaluations are replaced by a single
-        # vectorized stacked evaluation (`_stacked_tp3d_eval`) on the hot path.
+        # Pieces whose per-fit scalar TPI evaluations, each at its OWN point, are
+        # replaced by a single vectorized stacked evaluation (_stacked_tp3d_eval).
         stacked_pieces = {"res_amp", "res_phase"}
         self.stacked_fit = {}
+        raw_coeffs = {}
+        shared_nodes = None
 
         for data_piece_name in self.data_piece_names:
             load_dir = os.path.join(self.sur_dir, f"fits/{data_piece_name}_fits")
@@ -646,12 +697,51 @@ class EccentricSurrogate(Surrogate):
                 self.stacked_fit[data_piece_name] = self._build_stacked_fit(
                     nodes_list, coeffs_list
                 )
+            raw_coeffs[data_piece_name] = coeffs_list
+            shared_nodes = nodes_list[0]
 
         filepath = os.path.join(
             self.sur_dir, f"fits/mean_anomaly_offset-ref_space-3D-fit_spline.h5"
         )
-        fit = self.load_fit(filepath)
-        self.fit["mean_anomaly_offset_fit"] = [fit]
+        mao_nodes, mao_coeffs = self._read_fit_raw(filepath)
+        self.fit["mean_anomaly_offset_fit"] = [
+            TPI.TP_Interpolant_ND(mao_nodes, coeffs=mao_coeffs)
+        ]
+        raw_coeffs["mean_anomaly_offset"] = [mao_coeffs]
+
+        # Combined stack of every piece evaluated at the shared reference point
+        # [eta, e_ref, l_ref] on the shared parameter-space grid. Their scalar
+        # TPI loops collapse to one shared-basis contraction (_shared_node_tp3d_eval).
+        self._shared_ref_order = [
+            ("e", 7),
+            ("res_circ_phase", 4),
+            ("shifted_mean_anomaly", 7),
+            ("mean_anomaly_offset", 1),
+            ("x", 7),
+        ]
+        self._shared_ref_knots = [
+            _construct_tp_knots(shared_nodes[axis]) for axis in range(3)
+        ]
+        self._shared_ref_slices = {}
+        stacked = []
+        offset = 0
+        for name, count in self._shared_ref_order:
+            self._shared_ref_slices[name] = slice(offset, offset + count)
+            stacked.extend(raw_coeffs[name])
+            offset += count
+        self._shared_ref_coeffs = np.stack(stacked)
+
+    def _eval_shared_ref(self, eta, e_ref, l_ref):
+        """Evaluate all shared-node reference-point pieces at once; returns a dict
+        of per-piece node-value arrays keyed by data-piece name."""
+        vals = _shared_node_tp3d_eval(
+            self._shared_ref_knots[0],
+            self._shared_ref_knots[1],
+            self._shared_ref_knots[2],
+            self._shared_ref_coeffs,
+            np.array([eta, e_ref, l_ref]),
+        )
+        return {name: vals[sl] for name, sl in self._shared_ref_slices.items()}
 
     def __call__(
         self,
@@ -725,9 +815,14 @@ class EccentricSurrogate(Surrogate):
             )
         eta = eta_from_q(q)
 
-        e_node_vals = np.asarray(
-            [self.fit["e"][i]([eta, e_ref, l_ref]) for i in range(len(self.fit["e"]))]
-        )
+        # All parametric fits evaluated at the shared reference point
+        # [eta, e_ref, l_ref] (e, res_circ_phase, shifted_mean_anomaly,
+        # mean_anomaly_offset, x) are computed in one shared-basis contraction.
+        shared_ref_vals = self._eval_shared_ref(eta, e_ref, l_ref)
+        e_node_vals = shared_ref_vals["e"]
+        res_circ_phase_node_vals = shared_ref_vals["res_circ_phase"]
+        shifted_mean_anomaly_node_vals = shared_ref_vals["shifted_mean_anomaly"]
+
         e_eim_res_amp = self.norm_factor["e"] * np.dot(
             e_node_vals, self.eim_B["e"][:, self.ei_indices["res_amp"]]
         )
@@ -735,10 +830,8 @@ class EccentricSurrogate(Surrogate):
             e_node_vals, self.eim_B["e"][:, self.ei_indices["res_phase"]]
         )
 
-        mean_anomaly_offset_of_shifted_mean_anomaly = self.fit[
-            "mean_anomaly_offset_fit"
-        ][0](
-            [eta, e_ref, l_ref]
+        mean_anomaly_offset_of_shifted_mean_anomaly = float(
+            shared_ref_vals["mean_anomaly_offset"][0]
         )  # This is the mean anomaly offset of the shifted mean anomaly
         # Caution: It's important here that l_grid_sur is the un-truncated, full sur.l_grid_sur
         l_eim_res_amp = (
@@ -766,18 +859,6 @@ class EccentricSurrogate(Surrogate):
         sp = self.stacked_fit["res_phase"]
         res_phase_node_vals = _stacked_tp3d_eval(
             sp["knots"][0], sp["knots"][1], sp["knots"][2], sp["coeffs"], res_phase_points
-        )
-        res_circ_phase_node_vals = np.asarray(
-            [
-                self.fit["res_circ_phase"][i]([eta, e_ref, l_ref])
-                for i in range(len(self.fit["res_circ_phase"]))
-            ]
-        )
-        shifted_mean_anomaly_node_vals = np.asarray(
-            [
-                self.fit["shifted_mean_anomaly"][i]([eta, e_ref, l_ref])
-                for i in range(len(self.fit["shifted_mean_anomaly"]))
-            ]
         )
 
         lt_relation = self.norm_factor["shifted_mean_anomaly"] * np.dot(
@@ -843,12 +924,7 @@ class EccentricSurrogate(Surrogate):
                 2 * np.pi * np.floor(l[0] / (2 * np.pi))
             )  # Bringing starting value of mean anomaly in [0, 2pi)
 
-            x_node_vals = np.asarray(
-                [
-                    self.fit["x"][i]([eta, e_ref, l_ref])
-                    for i in range(len(self.fit["x"]))
-                ]
-            )
+            x_node_vals = shared_ref_vals["x"]
             x_native = self.norm_factor["x"] * np.dot(
                 x_node_vals, self.eim_B["x"][:, start_idx_l:]
             )
