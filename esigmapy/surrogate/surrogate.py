@@ -148,8 +148,21 @@ def _lerp_uniform(x, g0, inv_dg, table, last):
 
 @njit(fastmath=True, cache=True)
 def _fused_ecc_mode_uniform(
-    tg0, tdg, lt_relation, q0, dq, n_out, lg0, ldg,
-    damp, dphase, rcp, amp0, phase0, amp_scale, remove_phase0,
+    tg0,
+    tdg,
+    lt_relation,
+    q0,
+    dq,
+    n_out,
+    lg0,
+    ldg,
+    damp,
+    dphase,
+    rcp,
+    amp0,
+    phase0,
+    amp_scale,
+    remove_phase0,
 ):
     """Single-pass eccentric final stage.
 
@@ -220,9 +233,7 @@ def _construct_tp_knots(nodes):
     Matches TPI's construction so the coefficient tensor (len(nodes)+2 per axis)
     is interpreted identically."""
     nodes = np.asarray(nodes, dtype=np.float64)
-    return np.concatenate(
-        (np.repeat(nodes[:1], 3), nodes, np.repeat(nodes[-1:], 3))
-    )
+    return np.concatenate((np.repeat(nodes[:1], 3), nodes, np.repeat(nodes[-1:], 3)))
 
 
 def _stacked_tp3d_eval(knots0, knots1, knots2, coeffs, points):
@@ -513,12 +524,26 @@ class CircularSurrogate(Surrogate):
             dg *= mass_scaling_factor
             if return_amp_phase_only:
                 return _fused_interp_amp_phase_uniform(
-                    g0, dg, amp_native, phase_native, t_start, delta_t,
-                    num_samples, amp_scale, remove_initial_phase,
+                    g0,
+                    dg,
+                    amp_native,
+                    phase_native,
+                    t_start,
+                    delta_t,
+                    num_samples,
+                    amp_scale,
+                    remove_initial_phase,
                 )
             return new_t_grid, _fused_interp_mode_uniform(
-                g0, dg, amp_native, phase_native, t_start, delta_t,
-                num_samples, amp_scale, remove_initial_phase,
+                g0,
+                dg,
+                amp_native,
+                phase_native,
+                t_start,
+                delta_t,
+                num_samples,
+                amp_scale,
+                remove_initial_phase,
             )
 
         t_grid_sur = t_grid_sur[start_idx:] * mass_scaling_factor
@@ -858,7 +883,11 @@ class EccentricSurrogate(Surrogate):
         res_phase_points[:, 2] = l_eim_res_phase
         sp = self.stacked_fit["res_phase"]
         res_phase_node_vals = _stacked_tp3d_eval(
-            sp["knots"][0], sp["knots"][1], sp["knots"][2], sp["coeffs"], res_phase_points
+            sp["knots"][0],
+            sp["knots"][1],
+            sp["knots"][2],
+            sp["coeffs"],
+            res_phase_points,
         )
 
         lt_relation = self.norm_factor["shifted_mean_anomaly"] * np.dot(
@@ -893,9 +922,20 @@ class EccentricSurrogate(Surrogate):
             tdg *= mass_scaling_factor
             lg0, ldg = _uniform_grid_scalars(l_grid_sur, start_idx_l)
             return new_t_grid, _fused_ecc_mode_uniform(
-                tg0, tdg, lt_relation, t_start, delta_t, num_samples,
-                lg0, ldg, delta_amp_native, delta_phase_native,
-                res_circ_phase_native, amp0_, phase0_, amp_scale,
+                tg0,
+                tdg,
+                lt_relation,
+                t_start,
+                delta_t,
+                num_samples,
+                lg0,
+                ldg,
+                delta_amp_native,
+                delta_phase_native,
+                res_circ_phase_native,
+                amp0_,
+                phase0_,
+                amp_scale,
                 remove_start_phase,
             )
 

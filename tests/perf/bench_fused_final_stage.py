@@ -36,12 +36,12 @@ import time
 import numpy as np
 from numba import njit
 
-
 # --- current pipeline -------------------------------------------------------
 
 
-def _current_mode(new_t_grid, t_grid_sur, amp_native, phase_native, amp_scale,
-                  remove_phase0):
+def _current_mode(
+    new_t_grid, t_grid_sur, amp_native, phase_native, amp_scale, remove_phase0
+):
     amp = np.interp(new_t_grid, t_grid_sur, amp_native)
     phase = np.interp(new_t_grid, t_grid_sur, phase_native)
     amp = amp * amp_scale
@@ -54,8 +54,9 @@ def _current_mode(new_t_grid, t_grid_sur, amp_native, phase_native, amp_scale,
 
 
 @njit(fastmath=True, cache=True)
-def _fused_interp_mode_uniform(g0, dg, amp_table, phase_table, q0, dq, n_out,
-                               amp_scale, phase0):
+def _fused_interp_mode_uniform(
+    g0, dg, amp_table, phase_table, q0, dq, n_out, amp_scale, phase0
+):
     """One-pass uniform-grid interp + scale + complex assembly.
 
     g0, dg  : first value and spacing of the native (source) grid.
@@ -91,8 +92,9 @@ def _fused_interp_mode_uniform(g0, dg, amp_table, phase_table, q0, dq, n_out,
 
 
 @njit(fastmath=True, cache=True)
-def _fused_interp_amp_phase_uniform(g0, dg, amp_table, phase_table, q0, dq,
-                                    n_out, amp_scale, phase0):
+def _fused_interp_amp_phase_uniform(
+    g0, dg, amp_table, phase_table, q0, dq, n_out, amp_scale, phase0
+):
     ntab = amp_table.shape[0]
     amp = np.empty(n_out, dtype=np.float64)
     phase = np.empty(n_out, dtype=np.float64)
@@ -132,15 +134,17 @@ def _bench_case(n_tab, n_out, seed, repetitions):
     remove_phase0 = True
     phase0 = phase_native[0] if False else 0.0  # phase0 for kernel set below
 
-    ref = _current_mode(new_t_grid, t_grid_sur, amp_native, phase_native,
-                        amp_scale, remove_phase0)
+    ref = _current_mode(
+        new_t_grid, t_grid_sur, amp_native, phase_native, amp_scale, remove_phase0
+    )
 
     # For the fused kernel, phase0 must equal the interpolated phase at sample 0.
     ph0 = np.interp(new_t_grid[0], t_grid_sur, phase_native) if remove_phase0 else 0.0
 
     # warmup / compile
-    got = _fused_interp_mode_uniform(g0, dg, amp_native, phase_native, q0, dq,
-                                    n_out, amp_scale, ph0)
+    got = _fused_interp_mode_uniform(
+        g0, dg, amp_native, phase_native, q0, dq, n_out, amp_scale, ph0
+    )
 
     diff = np.abs(ref - got)
     denom = np.maximum(np.abs(ref), 1e-30)
@@ -153,10 +157,27 @@ def _bench_case(n_tab, n_out, seed, repetitions):
             fn(*a)
         return (time.perf_counter() - t0) / repetitions
 
-    t_cur = time_fn(_current_mode, new_t_grid, t_grid_sur, amp_native,
-                    phase_native, amp_scale, remove_phase0)
-    t_fused = time_fn(_fused_interp_mode_uniform, g0, dg, amp_native,
-                     phase_native, q0, dq, n_out, amp_scale, ph0)
+    t_cur = time_fn(
+        _current_mode,
+        new_t_grid,
+        t_grid_sur,
+        amp_native,
+        phase_native,
+        amp_scale,
+        remove_phase0,
+    )
+    t_fused = time_fn(
+        _fused_interp_mode_uniform,
+        g0,
+        dg,
+        amp_native,
+        phase_native,
+        q0,
+        dq,
+        n_out,
+        amp_scale,
+        ph0,
+    )
 
     print(f"n_tab={n_tab} n_out={n_out}")
     print(f"  current pipeline  avg_sec={t_cur:.6e}")
@@ -170,8 +191,12 @@ def main():
     p.add_argument("--seed", type=int, default=7)
     args = p.parse_args()
     # near-merger: small output; long inspiral: ~1.2M output
-    _bench_case(n_tab=280_000, n_out=5_000, seed=args.seed, repetitions=args.repetitions)
-    _bench_case(n_tab=1_214_525, n_out=1_100_000, seed=args.seed, repetitions=args.repetitions)
+    _bench_case(
+        n_tab=280_000, n_out=5_000, seed=args.seed, repetitions=args.repetitions
+    )
+    _bench_case(
+        n_tab=1_214_525, n_out=1_100_000, seed=args.seed, repetitions=args.repetitions
+    )
     return 0
 
 
