@@ -664,9 +664,55 @@ class EccentricSurrogateJAX:
         # in_bucket_t (arg 4), remove_phase0 (5), with_orbital (6) are static.
         core = jax.jit(partial(body, with_orbital=False), static_argnums=(4, 5))
         core_orbital = jax.jit(partial(body, with_orbital=True), static_argnums=(4, 5))
+        # Un-jitted body, kept so parameter_space_evaluator can trace it inside
+        # user-supplied jit/vmap/grad transformations.
+        self._body = body
         return core, core_orbital
 
     # -- evaluation --
+
+    def _grid_setup(self, M, delta_t, t_start, t_end, times):
+        """Host-side prologue shared by ``__call__`` and
+        ``parameter_space_evaluator``: resolve the time range, build the output
+        grid and padded device query, and compute the bucketed native-grid
+        truncation scalars."""
+        if delta_t is None and times is None:
+            raise ValueError("Either delta_t or times must be provided.")
+
+        t_start, t_end, scale = self._set_time_range(M, t_start, t_end)
+
+        if times is None:
+            num_samples = int((t_end - t_start) / delta_t) + 1
+            new_t_grid = t_start + np.arange(num_samples) * delta_t
+        else:
+            new_t_grid = np.asarray(times, dtype=np.float64)
+            num_samples = new_t_grid.shape[0]
+
+        query, _ = self.circ_sur._build_query(
+            t_start, delta_t, num_samples, new_t_grid, times
+        )
+
+        start_idx_t = CircularSurrogateJAX._start_trunc_index(
+            self.t_grid_sur, t_start / scale
+        )
+        in_bucket_t = min(_bucket(self.n_t - start_idx_t), self.n_t)
+        in_start_t = self.n_t - in_bucket_t
+        tg0 = (self.t_g0 + in_start_t * self.t_dg) * scale
+        tdg = self.t_dg * scale
+        amp_scale = scale / _amp_correction_factor
+
+        return (
+            t_start,
+            t_end,
+            new_t_grid,
+            num_samples,
+            query,
+            in_start_t,
+            in_bucket_t,
+            tg0,
+            tdg,
+            amp_scale,
+        )
 
     def __call__(
         self,
@@ -679,20 +725,21 @@ class EccentricSurrogateJAX:
         remove_start_phase=True,
         return_orbital_variables=False,
     ):
-        if delta_t is None and times is None:
-            raise ValueError("Either delta_t or times must be provided.")
-
         q, e_ref, l_ref = params
         self.check_param_range(q=q, e_ref=e_ref, l_ref=l_ref)
 
-        t_start, t_end, scale = self._set_time_range(M, t_start, t_end)
-
-        if times is None:
-            num_samples = int((t_end - t_start) / delta_t) + 1
-            new_t_grid = t_start + np.arange(num_samples) * delta_t
-        else:
-            new_t_grid = np.asarray(times, dtype=np.float64)
-            num_samples = new_t_grid.shape[0]
+        (
+            t_start,
+            t_end,
+            new_t_grid,
+            num_samples,
+            query,
+            in_start_t,
+            in_bucket_t,
+            tg0,
+            tdg,
+            amp_scale,
+        ) = self._grid_setup(M, delta_t, t_start, t_end, times)
 
         # Below the smallest supported eccentricity, fall back to the circular
         # surrogate (matching the numpy backend).
@@ -718,24 +765,12 @@ class EccentricSurrogateJAX:
             )
 
         eta = float(eta_from_q(q))
-        query, out_bucket = self.circ_sur._build_query(
-            t_start, delta_t, num_samples, new_t_grid, times
-        )
 
         # Circular baseline amp/phase (initial phase removed), padded on device.
         circ_scale = M / self.circ_sur.sur_total_mass
         amp0, phase0 = self.circ_sur._eval_padded(
             M, eta, circ_scale, t_start, query, remove_initial_phase=True
         )
-
-        start_idx_t = CircularSurrogateJAX._start_trunc_index(
-            self.t_grid_sur, t_start / scale
-        )
-        in_bucket_t = min(_bucket(self.n_t - start_idx_t), self.n_t)
-        in_start_t = self.n_t - in_bucket_t
-        tg0 = (self.t_g0 + in_start_t * self.t_dg) * scale
-        tdg = self.t_dg * scale
-        amp_scale = scale / _amp_correction_factor
 
         core_args = (
             jnp.asarray(eta),
@@ -767,3 +802,76 @@ class EccentricSurrogateJAX:
         amp = np.asarray(amp)[:num_samples]
         phase = np.asarray(phase)[:num_samples]
         return new_t_grid, amp * np.exp(-1j * phase)
+
+    def parameter_space_evaluator(
+        self,
+        M,
+        delta_t=None,
+        t_start=None,
+        t_end=None,
+        times=None,
+        remove_start_phase=True,
+    ):
+        """Return ``(new_t_grid, fn)`` with ``fn(q, e_ref, l_ref) -> (amp, phase)``
+        a pure, JAX-traceable function of the waveform parameters.
+
+        The time-grid configuration (``M``, ``delta_t``/``times``,
+        ``t_start``/``t_end``) is fixed host-side once; ``fn`` then composes
+        with ``jax.jit``, ``jax.vmap``, and ``jax.grad``/``jax.jacfwd`` over
+        ``(q, e_ref, l_ref)``. ``amp`` and ``phase`` are the mode amplitude and
+        phase on ``new_t_grid``; the complex (2,2) mode is
+        ``amp * exp(-1j * phase)``. For matching results wrap ``fn`` in
+        ``jax.jit`` (or call it inside jitted code); called eagerly it computes
+        the same thing, just slower.
+
+        Unlike ``__call__``, ``fn`` performs NO parameter-range checks (traced
+        values cannot be inspected) and has no circular fallback at very small
+        ``e_ref``: out-of-range parameters are silently extrapolated with the
+        boundary spline segments, exactly as in TPI's jit-traced evaluation.
+        Validate inputs with ``check_param_range`` beforehand if that matters.
+        """
+        (
+            t_start,
+            _t_end,
+            new_t_grid,
+            num_samples,
+            query,
+            in_start_t,
+            in_bucket_t,
+            tg0,
+            tdg,
+            amp_scale,
+        ) = self._grid_setup(M, delta_t, t_start, t_end, times)
+
+        body = self._body
+        circ = self.circ_sur
+        circ_scale = M / circ.sur_total_mass
+        in_start_j = jnp.asarray(in_start_t)
+        tg0_j = jnp.asarray(tg0)
+        tdg_j = jnp.asarray(tdg)
+        amp_scale_j = jnp.asarray(amp_scale)
+        remove = bool(remove_start_phase)
+
+        def fn(q, e_ref, l_ref):
+            eta = q / (1.0 + q) ** 2  # eta_from_q, in traceable form
+            amp0, phase0 = circ._eval_padded(
+                M, eta, circ_scale, t_start, query, remove_initial_phase=True
+            )
+            amp, phase = body(
+                eta,
+                e_ref,
+                l_ref,
+                in_start_j,
+                in_bucket_t,
+                remove,
+                tg0_j,
+                tdg_j,
+                query,
+                amp0,
+                phase0,
+                amp_scale_j,
+                with_orbital=False,
+            )
+            return amp[:num_samples], phase[:num_samples]
+
+        return new_t_grid, fn

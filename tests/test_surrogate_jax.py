@@ -209,3 +209,66 @@ def test_grad_vmap_through_core(ecc_jax):
         lambda er: ej._core(jnp.asarray(eta), er, tail[0], *tail[1:])[0][:3]
     )(jnp.array([0.1, 0.2, 0.3]))
     assert np.asarray(batched).shape == (3, 3)
+
+
+@pytest.mark.parametrize(
+    "q,e_ref,l_ref",
+    [(2.3, 0.43, 1.3), (1.5, 0.1, 0.0)],
+)
+def test_parameter_space_evaluator_matches_call(ecc_jax, q, e_ref, l_ref):
+    """The public evaluator reproduces __call__ for fixed grid configuration."""
+    import jax
+
+    kw = dict(M=10.0, delta_t=0.000244140625, t_start=-1.0, t_end=None)
+    t_grid, fn = ecc_jax.parameter_space_evaluator(**kw)
+    fn = jax.jit(fn)
+
+    tn, hn = ecc_jax(M=10.0, params=(q, e_ref, l_ref), **{k: kw[k] for k in ("delta_t", "t_start", "t_end")})
+    amp, phase = fn(q, e_ref, l_ref)
+    h = np.asarray(amp) * np.exp(-1j * np.asarray(phase))
+    assert np.array_equal(t_grid, tn)
+    assert _rel(h, hn).max() < _WF_RTOL
+
+
+def test_parameter_space_evaluator_vmap(ecc_jax):
+    """vmap over (q, e_ref, l_ref) matches per-point evaluation."""
+    import jax
+    import jax.numpy as jnp
+
+    _, fn = ecc_jax.parameter_space_evaluator(
+        M=10.0, delta_t=0.000244140625, t_start=-1.0
+    )
+    qs = jnp.array([1.5, 2.3, 5.0])
+    es = jnp.array([0.1, 0.43, 0.25])
+    ls = jnp.array([0.0, 1.3, 2.0])
+    amp_b, phase_b = jax.vmap(fn)(qs, es, ls)
+    assert np.asarray(amp_b).shape[0] == 3
+    fn_j = jax.jit(fn)
+    for i in range(3):
+        amp_i, phase_i = fn_j(qs[i], es[i], ls[i])
+        assert _rel(amp_b[i], amp_i).max() < _WF_RTOL
+        assert np.abs(np.asarray(phase_b[i]) - np.asarray(phase_i)).max() < _PHASE_ATOL
+
+
+def test_parameter_space_evaluator_grad(ecc_jax):
+    """jax.grad through the public evaluator matches a finite difference."""
+    import jax
+    import jax.numpy as jnp
+
+    _, fn = ecc_jax.parameter_space_evaluator(
+        M=10.0, delta_t=0.000244140625, t_start=-1.0
+    )
+
+    def energy(e_ref):
+        amp, _ = fn(2.3, e_ref, 1.3)
+        return jnp.sum(amp * amp)
+
+    g = float(jax.grad(energy)(jnp.asarray(0.3)))
+    # energy(e_ref) is only piecewise smooth (linear interpolation kinks); a
+    # kink sits within ~1e-6 of e_ref=0.3, so the FD step must stay inside the
+    # smooth piece. float64 headroom is ample: the FD signal is ~1e-7 relative.
+    eps = 1e-7
+    fd = (
+        float(energy(jnp.asarray(0.3 + eps))) - float(energy(jnp.asarray(0.3 - eps)))
+    ) / (2 * eps)
+    assert abs(g - fd) / abs(fd) < 1e-4
