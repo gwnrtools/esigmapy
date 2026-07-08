@@ -263,6 +263,7 @@ def _run_worker(
     param_index: int,
     param_set: dict[str, Any],
     repetitions: int,
+    warmup: int,
     output_dir: Path,
 ) -> Path:
     worker_root = _ensure_dir(output_dir / worktree.label / f"param_{param_index:02d}")
@@ -310,6 +311,7 @@ worker_json = out_dir / "worker_results.json"
 
 param = json.loads(os.environ["ESIGMASUR_PARAM_JSON"])
 repetitions = int(os.environ["ESIGMASUR_REPETITIONS"])
+warmup = int(os.environ["ESIGMASUR_WARMUP"])
 
 circ = surrogate_module.CircularSurrogate(
     data_dir=str(expected_root / "esigmapy" / "surrogate" / "data" / "circ_sur_data")
@@ -331,57 +333,66 @@ delta_t = param["delta_t"]
 t_start = param["t_start"]
 
 def run_batch(label, func):
+    # Discarded warmup calls, run outside the profiled region, so one-time
+    # costs (numba JIT compilation on a cold per-worktree cache, data-dependent
+    # lazy setup) do not pollute the wall-clock averages or the line_profiler
+    # totals. Outputs are deterministic, so the first warmup result doubles as
+    # the accuracy artifact.
     first = None
-    wall_start = time.perf_counter()
-    for idx in range(repetitions):
+    for _ in range(warmup):
         result = func()
-        if idx == 0:
+        if first is None:
             first = result
-    elapsed = time.perf_counter() - wall_start
+    lp.enable_by_count()
+    try:
+        wall_start = time.perf_counter()
+        for idx in range(repetitions):
+            result = func()
+        elapsed = time.perf_counter() - wall_start
+    finally:
+        lp.disable_by_count()
+    if first is None:  # warmup == 0: fall back to a timed result (deterministic)
+        first = result
     return first, elapsed / repetitions, elapsed
 
-lp.enable_by_count()
-try:
-    circ_full, circ_full_avg_wall, circ_full_total_wall = run_batch(
-        "circular_full",
-        lambda: circ(
-            M=M,
-            q=q,
-            delta_t=delta_t,
-            t_start=t_start,
-            remove_initial_phase=False,
-            return_amp_phase_only=False,
-            return_orbital_variables=False,
+circ_full, circ_full_avg_wall, circ_full_total_wall = run_batch(
+    "circular_full",
+    lambda: circ(
+        M=M,
+        q=q,
+        delta_t=delta_t,
+        t_start=t_start,
+        remove_initial_phase=False,
+        return_amp_phase_only=False,
+        return_orbital_variables=False,
+    ),
+)
+circ_amp_phase, circ_amp_phase_avg_wall, circ_amp_phase_total_wall = run_batch(
+    "circular_amp_phase",
+    lambda: circ(
+        M=M,
+        q=q,
+        delta_t=delta_t,
+        t_start=t_start,
+        remove_initial_phase=False,
+        return_amp_phase_only=True,
+        return_orbital_variables=False,
+    ),
+)
+ecc_full, ecc_full_avg_wall, ecc_full_total_wall = run_batch(
+    "eccentric_full",
+    lambda: ecc(
+        M=M,
+        params=(
+            q,
+            reference_eccentricity,
+            reference_mean_anomaly,
         ),
-    )
-    circ_amp_phase, circ_amp_phase_avg_wall, circ_amp_phase_total_wall = run_batch(
-        "circular_amp_phase",
-        lambda: circ(
-            M=M,
-            q=q,
-            delta_t=delta_t,
-            t_start=t_start,
-            remove_initial_phase=False,
-            return_amp_phase_only=True,
-            return_orbital_variables=False,
-        ),
-    )
-    ecc_full, ecc_full_avg_wall, ecc_full_total_wall = run_batch(
-        "eccentric_full",
-        lambda: ecc(
-            M=M,
-            params=(
-                q,
-                reference_eccentricity,
-                reference_mean_anomaly,
-            ),
-            delta_t=delta_t,
-            t_start=t_start,
-            return_orbital_variables=False,
-        ),
-    )
-finally:
-    lp.disable_by_count()
+        delta_t=delta_t,
+        t_start=t_start,
+        return_orbital_variables=False,
+    ),
+)
 
 with profile_txt.open("w", encoding="utf-8") as fh:
     lp.print_stats(stream=fh)
@@ -440,6 +451,7 @@ payload = {
     },
     "param_set": param,
     "repetitions": repetitions,
+    "warmup": warmup,
     "profiling": {
         "report_path": str(profile_txt),
         "call_counts": {
@@ -479,6 +491,7 @@ print(worker_json, flush=True)
     child_env["ESIGMASUR_PROFILE_TXT"] = str(profile_txt)
     child_env["ESIGMASUR_PARAM_JSON"] = json.dumps(param_set)
     child_env["ESIGMASUR_REPETITIONS"] = str(repetitions)
+    child_env["ESIGMASUR_WARMUP"] = str(warmup)
 
     child_cwd = Path(tempfile.mkdtemp(prefix="esigmapy-surrogate-worker-"))
     try:
@@ -739,6 +752,16 @@ def _parent_main(argv: list[str]) -> int:
         help="Number of repeated calls to profile for each scenario.",
     )
     parser.add_argument(
+        "--warmup",
+        type=int,
+        default=3,
+        help=(
+            "Number of discarded warmup calls per scenario, run before the "
+            "timed/profiled loop so one-time JIT compilation does not skew "
+            "the averages."
+        ),
+    )
+    parser.add_argument(
         "--keep-worktrees",
         action="store_true",
         help="Keep detached worktrees after the run.",
@@ -766,6 +789,7 @@ def _parent_main(argv: list[str]) -> int:
                     param_index=index,
                     param_set=param_set,
                     repetitions=args.repetitions,
+                    warmup=args.warmup,
                     output_dir=worker_output_root,
                 )
 
