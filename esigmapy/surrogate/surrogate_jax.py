@@ -416,7 +416,7 @@ class EccentricSurrogateJAX:
         self.q_min, self.q_max = 1.0, 6.0
         self.e_ref_min, self.e_ref_max = 5.0e-7, 0.431
         self.l_ref_min, self.l_ref_max = 0.0, _TWO_PI
-        self._core = self._make_core()
+        self._core, self._core_orbital = self._make_core()
 
     # -- loading --
 
@@ -574,15 +574,16 @@ class EccentricSurrogateJAX:
         eim_rcp = self.eim_B["res_circ_phase"]
         eim_sma = self.eim_B["shifted_mean_anomaly"]
         l_g0, l_dg = self.l_g0, self.l_dg
+        eim_e_full, eim_x_full = self.eim_B["e"], self.eim_B["x"]
         s_amp, s_rcp, s_sma = (
             self._shared_slices["e"],
             self._shared_slices["res_circ_phase"],
             self._shared_slices["shifted_mean_anomaly"],
         )
         s_mao = self._shared_slices["mean_anomaly_offset"]
+        s_x = self._shared_slices["x"]
 
-        @partial(jax.jit, static_argnums=(4, 5))
-        def core(
+        def body(
             eta,
             e_ref,
             l_ref,
@@ -595,6 +596,7 @@ class EccentricSurrogateJAX:
             amp0,
             phase0,
             amp_scale,
+            with_orbital,
         ):
             shared = vec.TPInterpolationND(jnp.array([eta, e_ref, l_ref]))  # (26,)
             e_nodes = shared[s_amp]
@@ -633,9 +635,16 @@ class EccentricSurrogateJAX:
             phase = phase0 + rC + dP
             if remove_phase0:
                 phase = phase - phase[0]
+            if with_orbital:
+                e_orb = _interp_uniform(e_nodes @ eim_e_full, l_g0, l_dg, l_s)
+                x_orb = _interp_uniform(shared[s_x] @ eim_x_full, l_g0, l_dg, l_s)
+                return amp, phase, e_orb, x_orb, l_s, mao
             return amp, phase
 
-        return core
+        # in_bucket_t (arg 4), remove_phase0 (5), with_orbital (6) are static.
+        core = jax.jit(partial(body, with_orbital=False), static_argnums=(4, 5))
+        core_orbital = jax.jit(partial(body, with_orbital=True), static_argnums=(4, 5))
+        return core, core_orbital
 
     # -- evaluation --
 
@@ -652,10 +661,6 @@ class EccentricSurrogateJAX:
     ):
         if delta_t is None and times is None:
             raise ValueError("Either delta_t or times must be provided.")
-        if return_orbital_variables:
-            raise NotImplementedError(
-                "return_orbital_variables is not yet supported by the JAX backend."
-            )
 
         q, e_ref, l_ref = params
         self.check_param_range(q=q, e_ref=e_ref, l_ref=l_ref)
@@ -672,6 +677,11 @@ class EccentricSurrogateJAX:
         # Below the smallest supported eccentricity, fall back to the circular
         # surrogate (matching the numpy backend).
         if e_ref <= self.e_ref_min:
+            if return_orbital_variables:
+                raise NotImplementedError(
+                    "return_orbital_variables with the circular fallback "
+                    "(e_ref < e_ref_min) is not supported by the JAX backend."
+                )
             if e_ref != 0.0:
                 print(
                     f"Warning: e_ref={e_ref} < {self.e_ref_min}. Using circular "
@@ -707,7 +717,7 @@ class EccentricSurrogateJAX:
         tdg = self.t_dg * scale
         amp_scale = scale / _amp_correction_factor
 
-        amp, phase = self._core(
+        core_args = (
             jnp.asarray(eta),
             jnp.asarray(float(e_ref)),
             jnp.asarray(float(l_ref)),
@@ -722,6 +732,18 @@ class EccentricSurrogateJAX:
             jnp.asarray(amp_scale),
         )
 
+        if return_orbital_variables:
+            amp, phase, e_orb, x_orb, l_s, mao = self._core_orbital(*core_args)
+            amp = np.asarray(amp)[:num_samples]
+            phase = np.asarray(phase)[:num_samples]
+            e = np.asarray(e_orb)[:num_samples]
+            x = np.asarray(x_orb)[:num_samples]
+            l = np.asarray(l_s)[:num_samples] + float(mao)
+            l -= 2 * np.pi * np.floor(l[0] / (2 * np.pi))
+            orb_vars = {"e": e, "l": l, "x": x}
+            return new_t_grid, orb_vars, amp * np.exp(-1j * phase)
+
+        amp, phase = self._core(*core_args)
         amp = np.asarray(amp)[:num_samples]
         phase = np.asarray(phase)[:num_samples]
         return new_t_grid, amp * np.exp(-1j * phase)

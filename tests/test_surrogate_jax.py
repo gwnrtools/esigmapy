@@ -138,3 +138,74 @@ def test_eccentric_user_times(ecc_np, ecc_jax):
     tj, hj = ecc_jax(M=12.0, params=(3.0, 0.2, 1.0), times=times)
     assert np.array_equal(tn, tj)
     assert _rel(hj, hn).max() < _WF_RTOL
+
+
+@pytest.mark.parametrize("t_start", [-136.0, -1.0])
+def test_eccentric_orbital_variables(ecc_np, ecc_jax, t_start):
+    kw = dict(
+        M=10.0,
+        params=(2.3, 0.43, 1.3),
+        delta_t=0.000244140625,
+        t_start=t_start,
+        t_end=None,
+        return_orbital_variables=True,
+    )
+    tn, ovn, hn = ecc_np(**kw)
+    tj, ovj, hj = ecc_jax(**kw)
+    assert np.array_equal(tn, tj)
+    assert _rel(hj, hn).max() < _WF_RTOL
+    for key in ("e", "l", "x"):
+        assert _rel(ovj[key], ovn[key]).max() < 1e-8
+
+
+def test_grad_vmap_through_core(ecc_jax):
+    """The jitted eccentric core is differentiable and vmap-able over parameters."""
+    import jax
+    import jax.numpy as jnp
+    from esigmapy.surrogate.surrogate_jax import (
+        CircularSurrogateJAX,
+        _bucket,
+        _amp_correction_factor,
+    )
+
+    ej = ecc_jax
+    M, t_start, eta = 10.0, -1.0, 0.2
+    t_start, t_end, scale = ej._set_time_range(M, t_start, None)
+    num = int((t_end - t_start) / 0.000244140625) + 1
+    query, _ = ej.circ_sur._build_query(t_start, 0.000244140625, num, None, None)
+    circ_scale = M / ej.circ_sur.sur_total_mass
+    amp0, phase0 = ej.circ_sur._eval_padded(M, eta, circ_scale, t_start, query, True)
+    sidx = CircularSurrogateJAX._start_trunc_index(ej.t_grid_sur, t_start / scale)
+    in_bucket = min(_bucket(ej.n_t - sidx), ej.n_t)
+    in_start = ej.n_t - in_bucket
+    tg0 = (ej.t_g0 + in_start * ej.t_dg) * scale
+    tdg = ej.t_dg * scale
+    amp_scale = scale / _amp_correction_factor
+    tail = (
+        jnp.asarray(1.3),
+        jnp.asarray(in_start),
+        in_bucket,
+        True,
+        jnp.asarray(tg0),
+        jnp.asarray(tdg),
+        query,
+        amp0,
+        phase0,
+        jnp.asarray(amp_scale),
+    )
+
+    def energy(e_ref):
+        amp, _ = ej._core(jnp.asarray(eta), e_ref, tail[0], *tail[1:])
+        return jnp.sum(amp * amp)
+
+    g = float(jax.grad(energy)(jnp.asarray(0.3)))
+    eps = 1e-6
+    fd = (
+        float(energy(jnp.asarray(0.3 + eps))) - float(energy(jnp.asarray(0.3 - eps)))
+    ) / (2 * eps)
+    assert abs(g - fd) / abs(fd) < 1e-5
+
+    batched = jax.vmap(
+        lambda er: ej._core(jnp.asarray(eta), er, tail[0], *tail[1:])[0][:3]
+    )(jnp.array([0.1, 0.2, 0.3]))
+    assert np.asarray(batched).shape == (3, 3)
