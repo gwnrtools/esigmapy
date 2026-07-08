@@ -377,7 +377,10 @@ class CircularSurrogate(Surrogate):
 
         if times is None:
             num_samples = int((t_end - t_start) / delta_t) + 1
-            new_t_grid = t_start + np.arange(num_samples) * delta_t
+            # The output grid array itself is built lazily: the amp/phase-only
+            # fast path never returns it, and for long waveforms materializing
+            # the multi-megasample array is a measurable cost.
+            new_t_grid = None
         else:
             new_t_grid = times
 
@@ -422,6 +425,7 @@ class CircularSurrogate(Surrogate):
                     amp_scale,
                     remove_initial_phase,
                 )
+            new_t_grid = t_start + np.arange(num_samples) * delta_t
             return new_t_grid, _fused_interp_mode_uniform(
                 g0,
                 dg,
@@ -434,6 +438,8 @@ class CircularSurrogate(Surrogate):
                 remove_initial_phase,
             )
 
+        if new_t_grid is None:
+            new_t_grid = t_start + np.arange(num_samples) * delta_t
         t_grid_sur = t_grid_sur[start_idx:] * mass_scaling_factor
         amp = np.interp(new_t_grid, t_grid_sur, amp_native)
         phase = np.interp(new_t_grid, t_grid_sur, phase_native)
