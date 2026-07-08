@@ -392,11 +392,15 @@ class CircularSurrogate(Surrogate):
         amp_node_vals = self.fit["amp"](eta)
         phase_node_vals = self.fit["phase"](eta)
 
-        amp_native = self.norm_factor["amp"] * np.dot(
-            amp_node_vals, self.eim_B["amp"][:, start_idx:]
+        # The scalar norm factor is folded into the (short) node-value vector
+        # rather than applied to the (long) gemv output, avoiding a full extra
+        # pass over the native-length array.
+        amp_native = np.dot(
+            self.norm_factor["amp"] * amp_node_vals, self.eim_B["amp"][:, start_idx:]
         )
-        phase_native = self.norm_factor["phase"] * np.dot(
-            phase_node_vals, self.eim_B["phase"][:, start_idx:]
+        phase_native = np.dot(
+            self.norm_factor["phase"] * phase_node_vals,
+            self.eim_B["phase"][:, start_idx:],
         )
 
         amp_scale = (
@@ -455,8 +459,8 @@ class CircularSurrogate(Surrogate):
             e = np.zeros(len(new_t_grid))
 
             l_node_vals = self.fit["l"](eta)
-            l_native = self.norm_factor["l"] * np.dot(
-                l_node_vals, self.eim_B["l"][:, start_idx:]
+            l_native = np.dot(
+                self.norm_factor["l"] * l_node_vals, self.eim_B["l"][:, start_idx:]
             )
             l = (
                 np.interp(new_t_grid, t_grid_sur, l_native) + reference_mean_anomaly
@@ -467,8 +471,8 @@ class CircularSurrogate(Surrogate):
             )  # Bringing starting value of mean anomaly in [0, 2pi)
 
             x_node_vals = self.fit["x"](eta)
-            x_native = self.norm_factor["x"] * np.dot(
-                x_node_vals, self.eim_B["x"][:, start_idx:]
+            x_native = np.dot(
+                self.norm_factor["x"] * x_node_vals, self.eim_B["x"][:, start_idx:]
             )
             x = np.interp(new_t_grid, t_grid_sur, x_native)
 
@@ -714,11 +718,14 @@ class EccentricSurrogate(Surrogate):
         res_circ_phase_node_vals = shared_ref_vals["res_circ_phase"]
         shifted_mean_anomaly_node_vals = shared_ref_vals["shifted_mean_anomaly"]
 
-        e_eim_res_amp = self.norm_factor["e"] * np.dot(
-            e_node_vals, self.eim_B["e"][:, self.ei_indices["res_amp"]]
+        # As in the circular surrogate, scalar norm factors are folded into the
+        # short node-value vectors instead of the long gemv outputs.
+        e_node_vals_scaled = self.norm_factor["e"] * e_node_vals
+        e_eim_res_amp = np.dot(
+            e_node_vals_scaled, self.eim_B["e"][:, self.ei_indices["res_amp"]]
         )
-        e_eim_res_phase = self.norm_factor["e"] * np.dot(
-            e_node_vals, self.eim_B["e"][:, self.ei_indices["res_phase"]]
+        e_eim_res_phase = np.dot(
+            e_node_vals_scaled, self.eim_B["e"][:, self.ei_indices["res_phase"]]
         )
 
         mean_anomaly_offset_of_shifted_mean_anomaly = float(
@@ -765,8 +772,8 @@ class EccentricSurrogate(Surrogate):
             count=len(res_phase_fits),
         )
 
-        lt_relation = self.norm_factor["shifted_mean_anomaly"] * np.dot(
-            shifted_mean_anomaly_node_vals,
+        lt_relation = np.dot(
+            self.norm_factor["shifted_mean_anomaly"] * shifted_mean_anomaly_node_vals,
             self.eim_B["shifted_mean_anomaly"][:, start_idx_t:],
         )
 
@@ -775,14 +782,17 @@ class EccentricSurrogate(Surrogate):
             grid=l_grid_sur, val=l_start
         )
 
-        delta_amp_native = self.norm_factor["res_amp"] * np.dot(
-            res_amp_node_vals, self.eim_B["res_amp"][:, start_idx_l:]
+        delta_amp_native = np.dot(
+            self.norm_factor["res_amp"] * res_amp_node_vals,
+            self.eim_B["res_amp"][:, start_idx_l:],
         )
-        delta_phase_native = self.norm_factor["res_phase"] * np.dot(
-            res_phase_node_vals, self.eim_B["res_phase"][:, start_idx_l:]
+        delta_phase_native = np.dot(
+            self.norm_factor["res_phase"] * res_phase_node_vals,
+            self.eim_B["res_phase"][:, start_idx_l:],
         )
-        res_circ_phase_native = self.norm_factor["res_circ_phase"] * np.dot(
-            res_circ_phase_node_vals, self.eim_B["res_circ_phase"][:, start_idx_l:]
+        res_circ_phase_native = np.dot(
+            self.norm_factor["res_circ_phase"] * res_circ_phase_node_vals,
+            self.eim_B["res_circ_phase"][:, start_idx_l:],
         )
 
         amp_scale = mass_scaling_factor / _amp_correction_factor
@@ -829,9 +839,7 @@ class EccentricSurrogate(Surrogate):
             phase -= phase[0]
 
         if return_orbital_variables:
-            e_native = self.norm_factor["e"] * np.dot(
-                e_node_vals, self.eim_B["e"][:, start_idx_l:]
-            )
+            e_native = np.dot(e_node_vals_scaled, self.eim_B["e"][:, start_idx_l:])
             e = np.interp(l_s, l_grid_sur, e_native)
 
             l = l_s + mean_anomaly_offset_of_shifted_mean_anomaly
@@ -840,8 +848,8 @@ class EccentricSurrogate(Surrogate):
             )  # Bringing starting value of mean anomaly in [0, 2pi)
 
             x_node_vals = shared_ref_vals["x"]
-            x_native = self.norm_factor["x"] * np.dot(
-                x_node_vals, self.eim_B["x"][:, start_idx_l:]
+            x_native = np.dot(
+                self.norm_factor["x"] * x_node_vals, self.eim_B["x"][:, start_idx_l:]
             )
             x = np.interp(l_s, l_grid_sur, x_native)
 
