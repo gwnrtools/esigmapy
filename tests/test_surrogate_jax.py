@@ -224,10 +224,23 @@ def test_parameter_space_evaluator_matches_call(ecc_jax, q, e_ref, l_ref):
     fn = jax.jit(fn)
 
     tn, hn = ecc_jax(M=10.0, params=(q, e_ref, l_ref), **{k: kw[k] for k in ("delta_t", "t_start", "t_end")})
-    amp, phase = fn(q, e_ref, l_ref)
-    h = np.asarray(amp) * np.exp(-1j * np.asarray(phase))
+    h = np.asarray(fn(q, e_ref, l_ref))
     assert np.array_equal(t_grid, tn)
     assert _rel(h, hn).max() < _WF_RTOL
+
+
+def test_parameter_space_evaluator_amp_phase_output(ecc_jax):
+    """output='amp_phase' returns the (amp, phase) pair combining to the mode."""
+    import jax
+
+    kw = dict(M=10.0, delta_t=0.000244140625, t_start=-1.0)
+    t_grid, fn_mode = ecc_jax.parameter_space_evaluator(**kw)
+    _, fn_ap = ecc_jax.parameter_space_evaluator(output="amp_phase", **kw)
+    h = np.asarray(jax.jit(fn_mode)(2.3, 0.43, 1.3))
+    amp, phase = jax.jit(fn_ap)(2.3, 0.43, 1.3)
+    amp, phase = np.asarray(amp), np.asarray(phase)
+    assert np.all(amp > 0)
+    assert _rel(amp * np.exp(-1j * phase), h).max() < 1e-12
 
 
 def test_parameter_space_evaluator_vmap(ecc_jax):
@@ -236,7 +249,7 @@ def test_parameter_space_evaluator_vmap(ecc_jax):
     import jax.numpy as jnp
 
     _, fn = ecc_jax.parameter_space_evaluator(
-        M=10.0, delta_t=0.000244140625, t_start=-1.0
+        M=10.0, delta_t=0.000244140625, t_start=-1.0, output="amp_phase"
     )
     qs = jnp.array([1.5, 2.3, 5.0])
     es = jnp.array([0.1, 0.43, 0.25])
@@ -256,7 +269,7 @@ def test_parameter_space_evaluator_grad(ecc_jax):
     import jax.numpy as jnp
 
     _, fn = ecc_jax.parameter_space_evaluator(
-        M=10.0, delta_t=0.000244140625, t_start=-1.0
+        M=10.0, delta_t=0.000244140625, t_start=-1.0, output="amp_phase"
     )
 
     def energy(e_ref):
@@ -272,3 +285,97 @@ def test_parameter_space_evaluator_grad(ecc_jax):
         float(energy(jnp.asarray(0.3 + eps))) - float(energy(jnp.asarray(0.3 - eps)))
     ) / (2 * eps)
     assert abs(g - fd) / abs(fd) < 1e-4
+
+
+_DT = 0.000244140625
+
+
+@pytest.mark.parametrize("M_min", [None, 10.0])
+def test_traced_mass_evaluator_matches_numpy(ecc_np, ecc_jax, M_min):
+    """M=None evaluator on a segment equal to a numpy-backend grid matches it."""
+    import jax
+
+    # t_end=-_DT: the numpy backend's default grid ends one sample before t=0
+    # (its t_max is -3.7e-13*scale), so this makes the two grids identical
+    t_grid, fn = ecc_jax.parameter_space_evaluator(
+        delta_t=_DT, t_start=-1.0, t_end=-_DT, M_min=M_min
+    )
+    fn = jax.jit(fn)
+    for M, q, e_ref, l_ref in [(10.0, 2.3, 0.43, 1.3), (14.0, 1.5, 0.1, 0.0)]:
+        tn, hn = ecc_np(M=M, params=(q, e_ref, l_ref), delta_t=_DT, t_start=-1.0)
+        assert np.array_equal(t_grid, tn)
+        # segment start == waveform start -> the mask is inactive
+        h = np.asarray(fn(q, e_ref, l_ref, M, -1.0))
+        assert _rel(h, hn).max() < _WF_RTOL
+        # t_start=None means "full available length"; the segment lies inside
+        # the surrogate's range for these masses, so the result is identical
+        h_full = np.asarray(fn(q, e_ref, l_ref, M))
+        assert _rel(h_full, hn).max() < _WF_RTOL
+
+
+def test_traced_mass_evaluator_vmap_varying_mass_and_duration(ecc_np, ecc_jax):
+    """One vmapped batch with different (M, t_start) per element: pre-start
+    samples are exactly zero and the active region matches the numpy backend."""
+    import jax
+    import jax.numpy as jnp
+
+    seg_start = -2.0
+    t_grid, fn = ecc_jax.parameter_space_evaluator(
+        delta_t=_DT, t_start=seg_start, t_end=-_DT, M_min=10.0
+    )
+    Ms = np.array([10.0, 12.0, 16.0])
+    qs = np.array([1.5, 2.3, 5.0])
+    es = np.array([0.1, 0.43, 0.25])
+    ls = np.array([0.0, 1.3, 2.0])
+    # on-grid start times (multiples of delta_t away from seg_start)
+    starts = np.array([-2.0, -1.5, -1.0])
+
+    h_b = np.asarray(
+        jax.jit(jax.vmap(fn))(
+            jnp.asarray(qs), jnp.asarray(es), jnp.asarray(ls),
+            jnp.asarray(Ms), jnp.asarray(starts),
+        )
+    )
+    fn_j = jax.jit(fn)
+    for i in range(3):
+        h_i = np.asarray(fn_j(qs[i], es[i], ls[i], Ms[i], starts[i]))
+        assert _rel(h_b[i], h_i).max() < _WF_RTOL
+
+        active = t_grid >= starts[i]
+        assert np.all(h_b[i][~active] == 0.0)
+        assert np.all(h_b[i][active] != 0.0)
+        # active region matches a numpy-backend call started at starts[i]
+        tn, hn = ecc_np(
+            M=Ms[i], params=(qs[i], es[i], ls[i]), delta_t=_DT, t_start=starts[i]
+        )
+        assert np.allclose(t_grid[active], tn, rtol=0, atol=1e-12)
+        assert _rel(h_b[i][active], hn).max() < _WF_RTOL
+
+
+def test_traced_mass_evaluator_grad(ecc_jax):
+    """The traced-M path is differentiable, including w.r.t. the mass."""
+    import jax
+    import jax.numpy as jnp
+
+    _, fn = ecc_jax.parameter_space_evaluator(
+        delta_t=_DT, t_start=-1.0, M_min=10.0, output="amp_phase"
+    )
+
+    def energy(q, e_ref, l_ref, M):
+        amp, _ = fn(q, e_ref, l_ref, M, -1.0)
+        return jnp.sum(amp * amp)
+
+    args = (2.3, 0.3, 1.3, 12.0)
+    g_e, g_M = jax.jit(jax.grad(energy, argnums=(1, 3)))(*args)
+    eps = 1e-7
+    fd_e = (energy(2.3, 0.3 + eps, 1.3, 12.0) - energy(2.3, 0.3 - eps, 1.3, 12.0)) / (
+        2 * eps
+    )
+    assert abs(float(g_e) - float(fd_e)) / abs(float(fd_e)) < 1e-4
+    # energy(M) is piecewise smooth in M (interpolation-cell crossings), so the
+    # FD cross-check for the mass direction uses a looser tolerance
+    eps_M = 1e-6
+    fd_M = (energy(2.3, 0.3, 1.3, 12.0 + eps_M) - energy(2.3, 0.3, 1.3, 12.0 - eps_M)) / (
+        2 * eps_M
+    )
+    assert abs(float(g_M) - float(fd_M)) / abs(float(fd_M)) < 1e-3

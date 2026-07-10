@@ -224,11 +224,26 @@ class CircularSurrogateJAX:
             query = jnp.asarray(padded)
         return query, out_bucket
 
-    def _eval_padded(self, M, eta, scale, t_start, query, remove_initial_phase):
-        """Return device amp/phase padded to len(query) (unsliced)."""
-        start_idx = self._start_trunc_index(self.t_grid_sur, t_start / scale)
+    def _trunc_setup(self, t_start_over_scale):
+        """Host-side native-grid truncation: (in_start, in_bucket) covering the
+        native samples from ``t_start_over_scale`` (native units) to the end."""
+        start_idx = self._start_trunc_index(self.t_grid_sur, t_start_over_scale)
         in_bucket = min(_bucket(self.n_t - start_idx), self.n_t)
         in_start = self.n_t - in_bucket  # keep the tail, extend with real samples
+        return in_start, in_bucket
+
+    def _eval_padded(self, M, eta, scale, t_start, query, remove_initial_phase):
+        """Return device amp/phase padded to len(query) (unsliced)."""
+        in_start, in_bucket = self._trunc_setup(t_start / scale)
+        return self._eval_padded_trunc(
+            eta, scale, in_start, in_bucket, query, remove_initial_phase
+        )
+
+    def _eval_padded_trunc(
+        self, eta, scale, in_start, in_bucket, query, remove_initial_phase
+    ):
+        """Like ``_eval_padded`` but with the host truncation precomputed, so
+        ``scale`` (hence ``M``) may be a traced value."""
         g0 = (self.t_g0 + in_start * self.t_dg) * scale
         dg = self.t_dg * scale
         amp_scale = scale / _amp_correction_factor
@@ -805,24 +820,48 @@ class EccentricSurrogateJAX:
 
     def parameter_space_evaluator(
         self,
-        M,
+        M=None,
         delta_t=None,
         t_start=None,
         t_end=None,
         times=None,
         remove_start_phase=True,
+        output="mode",
+        M_min=None,
     ):
-        """Return ``(new_t_grid, fn)`` with ``fn(q, e_ref, l_ref) -> (amp, phase)``
-        a pure, JAX-traceable function of the waveform parameters.
+        """Return ``(new_t_grid, fn)`` with ``fn`` a pure, JAX-traceable
+        function of the waveform parameters.
 
-        The time-grid configuration (``M``, ``delta_t``/``times``,
-        ``t_start``/``t_end``) is fixed host-side once; ``fn`` then composes
-        with ``jax.jit``, ``jax.vmap``, and ``jax.grad``/``jax.jacfwd`` over
-        ``(q, e_ref, l_ref)``. ``amp`` and ``phase`` are the mode amplitude and
-        phase on ``new_t_grid``; the complex (2,2) mode is
-        ``amp * exp(-1j * phase)``. For matching results wrap ``fn`` in
-        ``jax.jit`` (or call it inside jitted code); called eagerly it computes
-        the same thing, just slower.
+        With ``output="mode"`` (the default) ``fn`` returns the complex (2,2)
+        mode ``h = amp * exp(-1j * phase)`` on ``new_t_grid`` -- together with
+        the returned time grid this is exactly the ``(t, h)`` output of
+        ``__call__``. ``output="amp_phase"`` returns the ``(amp, phase)`` pair
+        instead: two real arrays, the natural inputs for ``jax.grad`` of
+        phase-dependent functionals. ``fn`` composes with ``jax.jit``,
+        ``jax.vmap``, and ``jax.grad``/``jax.jacfwd``; for fast repeated calls
+        wrap it in ``jax.jit`` (called eagerly it computes the same thing,
+        just slower).
+
+        Two calling conventions, selected by ``M``:
+
+        * ``M`` given (a float): the full time-grid configuration (``M``,
+          ``delta_t``/``times``, ``t_start``/``t_end``) is fixed host-side and
+          ``fn(q, e_ref, l_ref)`` evaluates at one parameter-space point.
+        * ``M=None``: only the output grid is fixed host-side (``t_start``,
+          ``delta_t``, and optionally ``t_end`` <= 0, default 0), and
+          ``fn(q, e_ref, l_ref, M, t_start=None)`` takes the total mass -- and
+          optionally a per-waveform start time -- as *traced* arguments, so one
+          ``jax.vmap`` batch may mix masses and durations on the common grid
+          (the parameter-estimation workload: one data-segment grid, varying
+          sources). Samples of ``new_t_grid`` earlier than the waveform's
+          start, ``max(t_start, t_min(M))`` where ``t_min(M)`` is the
+          surrogate's earliest time for that mass, are exactly zero (mode) or
+          zeroed amp/phase; with ``remove_start_phase=True`` the phase is
+          referenced at that start. Pass ``M_min``, a lower bound on every
+          ``M`` the returned ``fn`` will see, to truncate the native grids
+          host-side (worst case is the smallest mass); without it the full
+          native grids are used -- always correct, but slower on CPU.
+          A user-supplied ``times`` array is not supported in this mode.
 
         Unlike ``__call__``, ``fn`` performs NO parameter-range checks (traced
         values cannot be inspected) and has no circular fallback at very small
@@ -830,6 +869,15 @@ class EccentricSurrogateJAX:
         boundary spline segments, exactly as in TPI's jit-traced evaluation.
         Validate inputs with ``check_param_range`` beforehand if that matters.
         """
+        if output not in ("mode", "amp_phase"):
+            raise ValueError(f"output must be 'mode' or 'amp_phase', got {output!r}.")
+        if M is None:
+            return self._traced_mass_evaluator(
+                delta_t, t_start, t_end, times, remove_start_phase, output, M_min
+            )
+        if M_min is not None:
+            raise ValueError("M_min only applies to the traced-mass mode (M=None).")
+
         (
             t_start,
             _t_end,
@@ -872,6 +920,104 @@ class EccentricSurrogateJAX:
                 amp_scale_j,
                 with_orbital=False,
             )
-            return amp[:num_samples], phase[:num_samples]
+            amp = amp[:num_samples]
+            phase = phase[:num_samples]
+            if output == "mode":
+                return amp * jnp.exp(-1j * phase)
+            return amp, phase
+
+        return new_t_grid, fn
+
+    def _traced_mass_evaluator(
+        self, delta_t, t_start, t_end, times, remove_start_phase, output, M_min
+    ):
+        """Build the ``M=None`` evaluator: fixed output grid, traced mass and
+        per-waveform start time. See ``parameter_space_evaluator``."""
+        if times is not None:
+            raise NotImplementedError(
+                "A user-supplied `times` grid is not supported with M=None; "
+                "provide t_start and delta_t (uniform common grid)."
+            )
+        if delta_t is None or t_start is None:
+            raise ValueError("With M=None, both t_start and delta_t are required.")
+        if t_end is None:
+            t_end = 0.0
+        if t_end > 0.0 or t_start >= t_end:
+            raise ValueError(
+                f"Need t_start < t_end <= 0 (t=0 is the end of the inspiral); "
+                f"got t_start={t_start}, t_end={t_end}."
+            )
+
+        num_samples = int((t_end - t_start) / delta_t) + 1
+        new_t_grid = t_start + np.arange(num_samples) * delta_t
+        query, _ = self.circ_sur._build_query(
+            t_start, delta_t, num_samples, new_t_grid, None
+        )
+
+        # Host-side native-grid truncation. The needed native span is widest
+        # for the smallest mass (t_start/scale most negative), so a bound
+        # computed at M_min is safe for every M >= M_min; without a bound,
+        # keep the full grids.
+        if M_min is not None:
+            start_idx_t = CircularSurrogateJAX._start_trunc_index(
+                self.t_grid_sur, t_start / (M_min / self.sur_total_mass)
+            )
+            in_bucket_t = min(_bucket(self.n_t - start_idx_t), self.n_t)
+            in_start_t = self.n_t - in_bucket_t
+            in_start_c, in_bucket_c = self.circ_sur._trunc_setup(
+                t_start / (M_min / self.circ_sur.sur_total_mass)
+            )
+        else:
+            in_start_t, in_bucket_t = 0, self.n_t
+            in_start_c, in_bucket_c = 0, self.circ_sur.n_t
+
+        body = self._body
+        circ = self.circ_sur
+        sur_mass = self.sur_total_mass
+        circ_mass = circ.sur_total_mass
+        t_g0, t_dg = self.t_g0, self.t_dg
+        in_start_j = jnp.asarray(in_start_t)
+        t_grid_j = jnp.asarray(new_t_grid)
+        seg_start = float(new_t_grid[0])
+        remove = bool(remove_start_phase)
+
+        def fn(q, e_ref, l_ref, M, t_start=None):
+            eta = q / (1.0 + q) ** 2  # eta_from_q, in traceable form
+            scale = M / sur_mass
+            amp0, phase0 = circ._eval_padded_trunc(
+                eta,
+                M / circ_mass,
+                in_start_c,
+                in_bucket_c,
+                query,
+                remove_initial_phase=True,
+            )
+            amp, phase = body(
+                eta,
+                e_ref,
+                l_ref,
+                in_start_j,
+                in_bucket_t,
+                False,  # phase is re-referenced at the waveform start below
+                (t_g0 + in_start_t * t_dg) * scale,
+                t_dg * scale,
+                query,
+                amp0,
+                phase0,
+                scale / _amp_correction_factor,
+                with_orbital=False,
+            )
+            amp = amp[:num_samples]
+            phase = phase[:num_samples]
+            # Effective waveform start: the caller's t_start, clipped to the
+            # surrogate's earliest time for this mass.
+            t_min = t_g0 * scale
+            start_eff = t_min if t_start is None else jnp.maximum(t_start, t_min)
+            if remove:
+                phase = phase - _interp_uniform(phase, seg_start, delta_t, start_eff)
+            keep = t_grid_j >= start_eff
+            if output == "mode":
+                return jnp.where(keep, amp * jnp.exp(-1j * phase), 0.0)
+            return jnp.where(keep, amp, 0.0), jnp.where(keep, phase, 0.0)
 
         return new_t_grid, fn
