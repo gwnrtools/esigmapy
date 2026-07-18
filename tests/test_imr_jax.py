@@ -211,3 +211,269 @@ def test_nrsur_jax_mode_symmetry(nrsur_mr):
     h2m2 = np.asarray(modes[(2, -2)])
     peak = np.abs(h22).max()
     assert np.abs(h2m2 - np.conj(h22)).max() < 1e-3 * peak
+
+
+# --- Tiers B & D: full IMR pipeline ------------------------------------------
+
+_CIRC_DIR = os.path.join(_DATA, "circ_sur_data")
+_ECC_DIR = os.path.join(_DATA, "ecc_sur_data")
+
+# (m1, m2, e_ref, l_ref, t_start): short inspirals for test speed. The Tier B
+# configs were verified to sit away from window-index razor edges (the JAX
+# inspiral differs from NumPy's at ~1e-9 relative, which at unlucky parameter
+# points shifts a frequency-bracket index by one sample -- sometimes with
+# compensating shifts that keep the total length equal while displacing the
+# window). Such points fail strict sample parity legitimately; e.g.
+# (36, 24, 0.1, 0.0) and (36, 24, 0.18, 0.7) are razor-edge cases.
+_IMR_CONFIGS = [
+    (41.4, 18.6, 0.25, 1.3, -40.0),
+    (25.0, 5.0, 0.4, 2.0, -30.0),
+    (30.0, 10.0, 0.2, 4.0, -40.0),
+]
+
+
+@pytest.fixture(scope="module")
+def imr_jax():
+    try:
+        return generator_jax.IMRESIGMASurJAX(_ECC_DIR, _CIRC_DIR)
+    except Exception as exc:  # pragma: no cover - environment dependent
+        pytest.skip(f"IMRESIGMASurJAX unavailable: {exc}")
+
+
+def _numpy_imr(m1, m2, e0, l0, t_start, **kw):
+    from esigmapy.surrogate.generator import get_imr_esigmasur_mode
+
+    return get_imr_esigmasur_mode(
+        mass1=m1,
+        mass2=m2,
+        delta_t=_DT,
+        reference_eccentricity=e0,
+        reference_mean_anomaly=l0,
+        t_start=t_start,
+        include_conjugate_modes=True,
+        **kw,
+    )
+
+
+def _lalsim_mr_for_driver(m1, m2, e0, l0, t_start):
+    """The lalsim NRSur7dq4 modes the NumPy driver generates internally
+    (first retry iteration; replicates its f_lower recipe)."""
+    from esigmapy.mr_generator import get_mr_modes
+
+    M = m1 + m2
+    orb_frq = _orbital_frequency(m1, m2, e0, l0, t_start=t_start)
+    f_tr0 = generator_jax.IMRESIGMASurJAX._f_mr_transition_default(M, m1 / m2)
+    f_win = (
+        _get_transition_frequency_window(
+            None, orb_frq, _DT, f_tr0 / 2, 0.25, False, True, True
+        )
+        * 2
+    )
+    f_tr = f_tr0 - f_win / 2
+    f_lower = (f_tr - f_win / 2) * 0.9
+    modes = get_mr_modes(
+        mass1=m1,
+        mass2=m2,
+        f_lower=f_lower,
+        f_ref=f_lower,
+        delta_t=_DT,
+        modes_to_use=[(2, 2), (2, -2)],
+        approximant="NRSur7dq4",
+    )
+    return {k: np.asarray(v) for k, v in modes.items()}
+
+
+@pytest.mark.parametrize("m1,m2,e0,l0,t_start", _IMR_CONFIGS)
+def test_tier_b_injected_mr_parity(imr_jax, m1, m2, e0, l0, t_start):
+    """Full JAX driver with the NumPy driver's own lalsim MR modes injected:
+    everything except the MR backend must match at the inspiral-backend
+    equivalence level (~1e-9 relative; bound 1e-8 of peak).
+
+    The window bracket indices come from the JAX inspiral (1e-9-different from
+    NumPy's), so a razor-edge parameter point could shift a window index by
+    one sample and legitimately fail the strict comparison; the configs here
+    were checked not to sit on such edges."""
+    try:
+        mr_lal = _lalsim_mr_for_driver(m1, m2, e0, l0, t_start)
+    except Exception as exc:  # pragma: no cover - environment dependent
+        pytest.skip(f"lalsim NRSur7dq4 unavailable: {exc}")
+    modes_np = _numpy_imr(m1, m2, e0, l0, t_start)
+    t_j, modes_j = imr_jax(
+        m1 + m2,
+        (m1 / m2, e0, l0),
+        _DT,
+        t_start=t_start,
+        include_conjugate_modes=True,
+        merger_ringdown_modes=mr_lal,
+    )
+    for lm in ((2, 2), (2, -2)):
+        h_np = np.asarray(modes_np[lm].data)
+        h_j = np.asarray(modes_j[lm])
+        assert len(h_j) == len(h_np), lm
+        assert float(modes_np[lm].sample_times[0]) == pytest.approx(t_j[0], abs=1e-9)
+        peak = np.abs(h_np).max()
+        assert np.abs(h_j - h_np).max() < 1e-8 * peak, lm
+
+
+def _compare_tier_d(modes_np, t_j, modes_j, remove_const_phase=False):
+    """Tier D bounds (measured 2026-07 on full-length configs: inspiral phase
+    ~1e-11 rad; to-peak phase <=0.15 rad and amp <=6e-3 of peak, dominated by
+    discrete window snapping of the sub-sample-offset MR grids; overall amp
+    <=3e-2 of peak; optimized match 1-M <= 2.4e-5). Locked with ~2.5x margin."""
+    from esigmapy import blend
+
+    for lm in ((2, 2), (2, -2)):
+        h_np = np.asarray(modes_np[lm].data)
+        h_j = np.asarray(modes_j[lm])
+        assert float(modes_np[lm].sample_times[0]) == pytest.approx(t_j[0], abs=1e-9)
+        n = min(len(h_np), len(h_j))
+        peak = np.abs(h_np).max()
+        a_n, a_j = np.abs(h_np[:n]), np.abs(h_j[:n])
+        ph_n = blend.compute_phase(h_np[:n])
+        ph_j = blend.compute_phase(h_j[:n])
+        dph = ph_j - ph_n
+        if remove_const_phase:
+            dph -= np.median(dph[: n // 4])
+        ipk = int(np.argmax(a_n))
+        strong = a_n > 1e-2 * peak
+        assert np.abs(dph[: ipk // 2]).max() < 1e-6, lm
+        assert np.abs(dph[:ipk]).max() < 0.4, lm
+        assert np.abs(dph[strong]).max() < 0.7, lm
+        assert np.abs(a_j[:ipk] - a_n[:ipk]).max() < 0.02 * peak, lm
+        assert np.abs(a_j - a_n).max() < 0.06 * peak, lm
+
+    # time/phase-optimized match on the real part of (2,2)
+    try:
+        from pycbc.filter import match
+        from pycbc.types import TimeSeries
+    except Exception:  # pragma: no cover - environment dependent
+        return
+    h_np = np.asarray(modes_np[(2, 2)].data)
+    h_j = np.asarray(modes_j[(2, 2)])
+    ln = 2 ** int(np.ceil(np.log2(max(len(h_np), len(h_j)))))
+    tsn = TimeSeries(np.real(np.pad(h_np, (0, ln - len(h_np)))), delta_t=_DT)
+    tsj = TimeSeries(np.real(np.pad(h_j, (0, ln - len(h_j)))), delta_t=_DT)
+    mm, _ = match(tsn, tsj)
+    # short test inspirals weight the merger more than the full-length
+    # measurement (1-M <= 2.4e-5); observed up to ~1.6e-4 here
+    assert 1 - mm < 5e-4
+
+
+@pytest.mark.parametrize("m1,m2,e0,l0,t_start", _IMR_CONFIGS)
+def test_tier_d_full_imr(imr_jax, m1, m2, e0, l0, t_start):
+    modes_np = _numpy_imr(m1, m2, e0, l0, t_start)
+    t_j, modes_j = imr_jax(
+        m1 + m2,
+        (m1 / m2, e0, l0),
+        _DT,
+        t_start=t_start,
+        include_conjugate_modes=True,
+    )
+    _compare_tier_d(modes_np, t_j, modes_j)
+
+
+def test_tier_d_align_inspiral_to_merger(imr_jax):
+    """blend_aligning_merger_to_inspiral=False: the overall phase is anchored
+    to the MR piece, whose raw phase convention differs between the two
+    NRSur7dq4 implementations, so compare up to a constant phase offset."""
+    m1, m2, e0, l0, t_start = _IMR_CONFIGS[0]
+    modes_np = _numpy_imr(
+        m1,
+        m2,
+        e0,
+        l0,
+        t_start,
+        blend_aligning_merger_to_inspiral=False,
+        coa_phase=0.3,
+    )
+    t_j, modes_j = imr_jax(
+        m1 + m2,
+        (m1 / m2, e0, l0),
+        _DT,
+        t_start=t_start,
+        include_conjugate_modes=True,
+        blend_aligning_merger_to_inspiral=False,
+        coa_phase=0.3,
+    )
+    _compare_tier_d(modes_np, t_j, modes_j, remove_const_phase=True)
+
+
+@pytest.mark.parametrize(
+    "kw",
+    [
+        dict(num_hyb_orbits=1.0),
+        # centered windows need a transition below the ISCO default: the
+        # window's upper edge must stay within the inspiral's frequency reach
+        dict(keep_f_mr_transition_at_center=True, f_mr_transition=62.0),
+        dict(f_window_mr_transition=20.0),
+        dict(f_mr_transition=1.0e4),  # failsafe clamp engages in both backends
+    ],
+)
+def test_tier_d_option_variants(imr_jax, kw):
+    m1, m2, e0, l0, t_start = _IMR_CONFIGS[0]
+    modes_np = _numpy_imr(m1, m2, e0, l0, t_start, **kw)
+    t_j, modes_j = imr_jax(
+        m1 + m2,
+        (m1 / m2, e0, l0),
+        _DT,
+        t_start=t_start,
+        include_conjugate_modes=True,
+        **kw,
+    )
+    _compare_tier_d(modes_np, t_j, modes_j)
+
+
+def test_return_structures(imr_jax):
+    """Orbital-variable and hybridization-info returns mirror the NumPy
+    backend's content."""
+    m1, m2, e0, l0, t_start = _IMR_CONFIGS[0]
+    ret_np = _numpy_imr(
+        m1,
+        m2,
+        e0,
+        l0,
+        t_start,
+        return_hybridization_info=True,
+        return_orbital_params=True,
+    )
+    hyb_np, orb_np, modes_np = ret_np
+    t_j, hyb_j, orb_j, modes_j = imr_jax(
+        m1 + m2,
+        (m1 / m2, e0, l0),
+        _DT,
+        t_start=t_start,
+        include_conjugate_modes=True,
+        return_hybridization_info=True,
+        return_orbital_params=True,
+    )
+    assert set(orb_j) == {"e", "l", "x"}
+    for key in ("e", "x"):
+        v_np = np.asarray(orb_np[key].data)
+        v_j = np.asarray(orb_j[key])
+        assert v_j.shape == v_np.shape
+        assert np.abs(v_j - v_np).max() < 1e-6 * max(1.0, np.abs(v_np).max())
+    # hybridization info: inspiral-grid window indices within one sample of
+    # NumPy's; the MR-grid indices live on different grids (full-span NRSur
+    # vs lalsim-from-f_lower), so only the window length is comparable
+    for pos in (1, 3):  # t1_index_insp, t2_index_insp
+        assert abs(int(hyb_j[pos]) - int(hyb_np[pos])) <= 1
+    n_win_j = int(hyb_j[4]) - int(hyb_j[2])
+    n_win_np = int(hyb_np[4]) - int(hyb_np[2])
+    assert abs(n_win_j - n_win_np) <= 1
+    assert set(hyb_j[0]) == set(modes_j)
+
+
+def test_circular_fallback_unsupported(imr_jax):
+    with pytest.raises(NotImplementedError):
+        imr_jax(60.0, (2.0, 0.0, 0.0), _DT, t_start=-10.0)
+
+
+def test_coa_phase_required_for_inspiral_alignment(imr_jax):
+    with pytest.raises(IOError):
+        imr_jax(
+            60.0,
+            (2.0, 0.2, 0.0),
+            _DT,
+            t_start=-10.0,
+            blend_aligning_merger_to_inspiral=False,
+        )

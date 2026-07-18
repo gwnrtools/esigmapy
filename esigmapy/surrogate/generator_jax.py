@@ -124,29 +124,6 @@ class NRSurMergerRingdownJAX:
 # --- transition frequency window ---------------------------------------------
 
 
-def _window_accumulate_backward_jax(contrib, delta_phi):
-    """Backward accumulate-until-threshold of ``_get_window_start_numba``.
-
-    ``contrib[k] = 0.5*(f[k]+f[k+1])*delta_t`` for the series being
-    integrated; visits ``k = n-2, n-3, ..., 1`` (never 0, as in the numba
-    loop) and stops at the first ``k`` where the accumulated ``|sum|``
-    reaches ``|delta_phi|``. Returns ``(idx, found)``.
-    """
-    vals = jnp.cumsum(contrib[1:][::-1])
-    hit = jnp.abs(vals) >= jnp.abs(delta_phi)
-    n = contrib.shape[0] + 1
-    idx = n - 2 - jnp.argmax(hit)
-    return idx, jnp.any(hit)
-
-
-def _window_accumulate_forward_jax(contrib, delta_phi):
-    """Forward variant: visits ``idx = 1..n-1`` accumulating ``contrib[idx-1]``
-    and stops when ``|sum|`` reaches ``|delta_phi|``. Returns ``(idx, found)``."""
-    vals = jnp.cumsum(contrib)
-    hit = jnp.abs(vals) >= jnp.abs(delta_phi)
-    return jnp.argmax(hit) + 1, jnp.any(hit)
-
-
 def transition_frequency_window_jax(
     orbital_freq,
     delta_t,
@@ -214,3 +191,229 @@ def transition_frequency_window_jax(
         orbital_freq, window_start_idx
     )
     return f_window, start_found, jnp.asarray(True)
+
+
+# --- IMR pipeline -------------------------------------------------------------
+
+
+class IMRESIGMASurJAX:
+    """JAX inspiral-merger-ringdown ESIGMASur: eccentric inspiral surrogate
+    blended with the NRSur7dq4 merger-ringdown.
+
+    The JAX counterpart of ``get_imr_esigmasur_mode``
+    (``esigmapy/surrogate/generator.py``): (2,2)-mode, non-spinning, blending
+    with the orbit-averaged orbital frequency derived from the surrogate's PN
+    parameter ``x``. Differences from the NumPy backend:
+
+    * the merger-ringdown is the (JAX) gwsurrogate NRSur7dq4 evaluated over
+      its full span, not lalsimulation's NRSur7dq4 from ``f_lower`` -- the
+      blend re-aligns time and phase, and the two NRSur7dq4 implementations
+      agree to ~2e-4 in amplitude / ~1.5e-3 rad in phase (see
+      tests/test_imr_jax.py Tier C), so blended waveforms agree at that level
+      plus discrete window-snapping effects;
+    * outputs are plain arrays ``(times, modes_dict)`` (the NumPy backend
+      returns pycbc TimeSeries), with the same epoch convention (t=0 at the
+      end of inspiral);
+    * the circular fallback at ``e_ref <= e_ref_min`` is not supported.
+
+    ``__call__`` is the host-orchestrated path (eager JAX kernels, concrete
+    shapes); use ``imr_parameter_space_evaluator`` for a pure traced function
+    composable with jit/vmap/grad.
+    """
+
+    def __init__(self, ecc_data_dir, circ_data_dir, nrsur_h5_path=None):
+        self.ecc_sur = surrogate_jax.EccentricSurrogateJAX(
+            ecc_data_dir=ecc_data_dir, circ_data_dir=circ_data_dir
+        )
+        self.mr_sur = NRSurMergerRingdownJAX(nrsur_h5_path)
+
+    @staticmethod
+    def _f_mr_transition_default(M, q):
+        """min(Kerr, Schwarzschild) ISCO (2,2)-mode frequency (Hz), as in
+        ``get_imr_esigmasur_mode`` with zero spins."""
+        from ..utils import f_ISCO_spin
+
+        mass1 = M * q / (1.0 + q)
+        mass2 = M / (1.0 + q)
+        f_Kerr = f_ISCO_spin(mass1, mass2, 0.0, 0.0)
+        f_Schwarz = 6.0**-1.5 / M / lal.MTSUN_SI / lal.PI
+        return min(f_Kerr, f_Schwarz)  # * (em / 2) with em = 2
+
+    def __call__(
+        self,
+        M,
+        params,
+        delta_t,
+        t_start=None,
+        distance=1.0,
+        coa_phase=None,
+        include_conjugate_modes=False,
+        f_mr_transition=None,
+        f_window_mr_transition=None,
+        num_hyb_orbits=0.25,
+        blend_aligning_merger_to_inspiral=True,
+        keep_f_mr_transition_at_center=False,
+        return_hybridization_info=False,
+        return_orbital_params=False,
+        failsafe=True,
+        merger_ringdown_modes=None,
+        verbose=False,
+    ):
+        """IMR (2,2) [and (2,-2)] modes for ``M`` (solar masses) and
+        ``params = (q, e_ref, l_ref)`` on a uniform ``delta_t`` grid.
+
+        Mirrors ``get_imr_esigmasur_mode`` semantics (see its docstring for
+        the parameters). ``merger_ringdown_modes`` optionally injects
+        precomputed MR mode arrays (dict keyed by (l, m), same ``delta_t``) in
+        place of the NRSur7dq4-JAX evaluation -- used by parity tests and
+        advanced callers.
+
+        Returns ``(times, modes)`` with ``times`` anchored so t=0 is the end
+        of inspiral, prepended to the NumPy backend's optional returns:
+        ``(times, hyb_info, orbital_var_dict, modes)`` with both flags,
+        ``(times, hyb_info, modes)`` / ``(times, orbital_var_dict, modes)``
+        with one.
+        """
+        from ..generator import (
+            ECCENTRICITY_LEVEL_ISCO_ERROR,
+            ECCENTRICITY_LEVEL_ISCO_WARNING,
+        )
+
+        q, e_ref, l_ref = params
+        em = 2  # mode_to_align_by = (2, 2)
+
+        if (not blend_aligning_merger_to_inspiral) and (coa_phase is None):
+            raise IOError(
+                """If you want to attach ESIGMASur inspiral to merger, by phase shifting inspiral to merger, please specify the phase angle `coa_phase`"""
+            )
+        if coa_phase is None:
+            coa_phase = 0.0
+        if e_ref <= self.ecc_sur.e_ref_min:
+            raise NotImplementedError(
+                "The JAX IMR pipeline requires e_ref > e_ref_min (the "
+                "circular fallback of the NumPy backend is not supported)."
+            )
+
+        available = ["e", "l", "x"]
+        if return_orbital_params is True:
+            return_orbital_params_user = set(available)
+        elif isinstance(return_orbital_params, (list, set, tuple)):
+            return_orbital_params_user = set(return_orbital_params) & set(available)
+        else:
+            return_orbital_params_user = False
+
+        t_insp, orb_vars, h22 = self.ecc_sur(
+            M,
+            [q, e_ref, l_ref],
+            delta_t=delta_t,
+            t_start=t_start,
+            t_end=None,
+            remove_start_phase=True,
+            return_orbital_variables=True,
+        )
+        h22 = np.asarray(h22) / distance
+        modes_insp = {(2, 2): h22}
+        if include_conjugate_modes:
+            modes_insp[(2, -2)] = np.conj(h22)  # (-1)**l conj for l=2
+
+        ecc_end = float(orb_vars["e"][-1])
+        if ecc_end > ECCENTRICITY_LEVEL_ISCO_ERROR:
+            raise IOError(f"""ERROR: You entered a very large reference eccentricity
+{e_ref}. The orbital eccentricity at the end of inspiral was
+{ecc_end}. The merger-ringdown attachment with a
+quasicircular will be questionable.""")
+        if ecc_end > ECCENTRICITY_LEVEL_ISCO_WARNING and verbose:
+            print(f"""WARNING: You entered a very large reference eccentricity
+{e_ref}. The orbital eccentricity at the end of inspiral was
+{ecc_end}. The merger-ringdown attachment with a quasicircular
+model might be affected.""")
+
+        orbital_frequency = (
+            np.asarray(orb_vars["x"]) ** 1.5 / (M * lal.MTSUN_SI) / (2 * np.pi)
+        )
+
+        if f_mr_transition is None:
+            f_mr_transition = self._f_mr_transition_default(M, q)
+
+        if failsafe:
+            mode_frequency = blend_jax.compute_frequency_jax(
+                blend_jax.compute_phase_jax(jnp.asarray(h22)), delta_t
+            )
+            max_mode_frequency = float(jnp.max(mode_frequency))
+            if max_mode_frequency < f_mr_transition:
+                if verbose:
+                    print(f"""FAILSAFE: resetting transition frequency from
+{f_mr_transition}Hz to {max_mode_frequency}Hz.""")
+                f_mr_transition = max_mode_frequency
+
+        if f_window_mr_transition is None:
+            f_win, start_found, end_found = transition_frequency_window_jax(
+                jnp.asarray(orbital_frequency),
+                delta_t,
+                f_mr_transition / em,
+                num_hyb_orbits,
+                keep_f_mr_transition_at_center,
+            )
+            if not failsafe and not bool(start_found):
+                raise RuntimeError(
+                    f"""Requested number of orbits to blend over not available
+in the waveform before the transition frequency. Either decrease the number of
+orbits to blend over (currently {num_hyb_orbits}) or increase the
+inspiral-to-merger transition frequency. `window_start_idx` is None."""
+                )
+            if not failsafe and not bool(end_found):
+                raise RuntimeError(
+                    f"""Requested number of orbits to blend over not available
+in the waveform after the transition frequency. Either decrease the number of
+orbits to blend over (currently {num_hyb_orbits}) or decrease the
+inspiral-to-merger transition frequency. `window_end_idx` is None."""
+                )
+            f_window_mr_transition = float(f_win) * em
+
+        # Reuse the centered-window blend with the window's right end at
+        # f_mr_transition (as in the NumPy driver).
+        if not keep_f_mr_transition_at_center:
+            f_mr_transition -= f_window_mr_transition / 2.0
+
+        if merger_ringdown_modes is None:
+            n_mr = self.mr_sur.num_samples(M, delta_t)
+            modes_mr = self.mr_sur.modes_2pm2(q, M, delta_t, distance, n_mr)
+            modes_mr = {
+                lm: np.asarray(h) * np.exp(-1j * lm[1] * coa_phase)
+                for lm, h in modes_mr.items()
+                if lm in modes_insp
+            }
+        else:
+            modes_mr = merger_ringdown_modes
+
+        retval = blend_jax.blend_modes_jax(
+            modes_insp,
+            modes_mr,
+            orbital_frequency,
+            f_mr_transition,
+            frq_width=f_window_mr_transition,
+            delta_t=delta_t,
+            modes_to_blend=list(modes_insp.keys()),
+            mode_to_align_by=(2, 2),
+            blend_using_avg_orbital_frequency=True,
+            blend_aligning_merger_to_inspiral=blend_aligning_merger_to_inspiral,
+            include_conjugate_modes=include_conjugate_modes,
+            verbose=verbose,
+        )
+        modes_imr = retval[0]
+
+        # t=0 at the end of inspiral (epoch convention of the NumPy backend)
+        t_peak = (len(h22) - 1) * delta_t
+        n_imr = len(modes_imr[(2, 2)])
+        times = -t_peak + np.arange(n_imr) * delta_t
+
+        if return_orbital_params_user:
+            orbital_vars_dict = {
+                key: np.asarray(orb_vars[key]) for key in return_orbital_params_user
+            }
+            if return_hybridization_info:
+                return times, retval, orbital_vars_dict, modes_imr
+            return times, orbital_vars_dict, modes_imr
+        if return_hybridization_info:
+            return times, retval, modes_imr
+        return times, modes_imr

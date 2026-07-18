@@ -431,16 +431,10 @@ parameters available with us: {available_inspiral_orbital_params}.
         return_orbital_params_user = False
 
     return_orbital_params = set(return_orbital_params)
-    return_orbital_params = return_orbital_params.union(
-        set(["e"])
-    )  # "e" needed necessarily for hybridization error printing
-
-    # If the user does not provide the width of hybridization window (in terms
-    # of orbital frequency) over which the inspiral should transition to
-    # merger-ringdown, we switch schemes and blend over `num_hyb_orbits`
-    # orbits instead.
-    if f_window_mr_transition is None:
-        return_orbital_params = return_orbital_params.union(set(["x"]))
+    # "e" needed necessarily for hybridization error printing; "x" for the
+    # orbit-averaged orbital frequency that blend_modes always uses (and, when
+    # f_window_mr_transition is not given, the hybridization window).
+    return_orbital_params = return_orbital_params.union(set(["e", "x"]))
 
     _, mode_to_align_by_em = mode_to_align_by
 
@@ -490,15 +484,18 @@ quasicircular will be questionable.""")
 {orbital_eccentricity[-1]}. The merger-ringdown attachment with a quasicircular
 model might be affected.""")
 
-    if (f_window_mr_transition is None) or failsafe or (verbose > 1):
-        if blend_using_avg_orbital_frequency:
-            orbital_frequency = (
-                retval[-2]["x"] ** 1.5 / ((mass1 + mass2) * lal.MTSUN_SI) / (2 * np.pi)
-            )
-        else:
-            NotImplementedError(
-                "Can't use any prescription other than the orbit averaged frequency one."
-            )
+    # blend_modes always needs the orbit-averaged orbital frequency (the
+    # previous guard `(f_window_mr_transition is None) or failsafe or
+    # (verbose > 1)` left it undefined -- or crashed on the missing "x" --
+    # when a window was user-specified).
+    if blend_using_avg_orbital_frequency:
+        orbital_frequency = (
+            retval[-2]["x"] ** 1.5 / ((mass1 + mass2) * lal.MTSUN_SI) / (2 * np.pi)
+        )
+    else:
+        raise NotImplementedError(
+            "Can't use any prescription other than the orbit averaged frequency one."
+        )
 
     if return_orbital_params_user:
         orbital_vars_dict = {
