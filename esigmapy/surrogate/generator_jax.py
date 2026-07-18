@@ -228,6 +228,46 @@ def _f_isco_spin_zero_jax(M, q):
     return 1 / 2 * fre
 
 
+# --- polarizations ------------------------------------------------------------
+
+
+def spin_weighted_ylm_2pm2_jax(inclination, azimuth, em):
+    """Spin-(-2) spherical harmonics Y_{2,+-2}, traceable in the angles.
+
+    Closed forms of ``lal.SpinWeightedSphericalHarmonic(inclination, azimuth,
+    -2, 2, +-2)``; ``em`` is a static Python int in {2, -2}.
+    """
+    fac = jnp.sqrt(5.0 / (64.0 * jnp.pi))
+    c = jnp.cos(inclination)
+    if em == 2:
+        return fac * (1.0 + c) ** 2 * jnp.exp(2j * azimuth)
+    if em == -2:
+        return fac * (1.0 - c) ** 2 * jnp.exp(-2j * azimuth)
+    raise ValueError(f"em must be +-2, got {em}")
+
+
+def polarizations_from_modes_jax(modes, inclination, coa_phase=0.0):
+    """GW polarizations from (2, +-2) modes; the JAX counterpart of
+    ``get_imr_esigmasur_waveform``'s combination step, i.e.
+    ``utils.get_polarizations_from_multipoles`` evaluated at azimuth
+    ``pi/2 - coa_phase``.
+
+    ``modes`` is a dict keyed by (l, m) in {(2, 2), (2, -2)} of complex
+    arrays; traceable in ``inclination``, ``coa_phase`` and the modes.
+    Returns ``(hp, hc)``.
+    """
+    azimuth = jnp.pi / 2 - coa_phase
+    hp = 0.0
+    hc = 0.0
+    for (el, em), h in modes.items():
+        if el != 2:
+            raise NotImplementedError("only l=2, m=+-2 modes are supported")
+        glm = h * spin_weighted_ylm_2pm2_jax(inclination, azimuth, em)
+        hp = hp + jnp.real(glm)
+        hc = hc - jnp.imag(glm)
+    return hp, hc
+
+
 # --- IMR pipeline -------------------------------------------------------------
 
 
@@ -630,3 +670,19 @@ inspiral-to-merger transition frequency. `window_end_idx` is None."""
             return amp_h, phase_h, valid_len
 
         return times, fn
+
+    def polarizations(
+        self, M, params, delta_t, inclination=0.0, coa_phase=0.0, **kwargs
+    ):
+        """``(times, hp, hc)`` -- the JAX counterpart of
+        ``get_imr_esigmasur_waveform``: forces conjugate modes and combines
+        them at azimuth ``pi/2 - coa_phase``. Extra ``kwargs`` pass through to
+        ``__call__``; its optional returns follow ``hc`` in the same order.
+        """
+        kwargs["include_conjugate_modes"] = True
+        ret = self.__call__(M, params, delta_t, coa_phase=coa_phase, **kwargs)
+        times, modes = ret[0], ret[-1]
+        hp, hc = polarizations_from_modes_jax(
+            {lm: jnp.asarray(h) for lm, h in modes.items()}, inclination, coa_phase
+        )
+        return (times, np.asarray(hp), np.asarray(hc)) + tuple(ret[1:-1])

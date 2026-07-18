@@ -621,3 +621,100 @@ def test_evaluator_gpu_matches_cpu(imr_jax):
     assert int(v_cpu) == int(v_gpu)
     peak = np.abs(np.asarray(h_cpu)).max()
     assert np.abs(np.asarray(h_gpu) - np.asarray(h_cpu)).max() < 1e-10 * peak
+
+
+# --- polarizations -----------------------------------------------------------
+
+
+def test_ylm_2pm2_vs_lal():
+    grid = [
+        (0.0, 0.0),
+        (0.3, 1.1),
+        (np.pi / 2, 2.0),
+        (2.5, -0.7),
+        (np.pi, 0.4),
+    ]
+    for incl, az in grid:
+        for em in (2, -2):
+            y_j = complex(generator_jax.spin_weighted_ylm_2pm2_jax(incl, az, em))
+            y_l = lal.SpinWeightedSphericalHarmonic(incl, az, -2, 2, em)
+            assert abs(y_j - y_l) < 1e-14, (incl, az, em)
+
+
+def test_polarizations_combination_vs_numpy(imr_jax):
+    """Same modes through both combination steps must agree to round-off."""
+    from esigmapy.utils import get_polarizations_from_multipoles
+
+    m1, m2, e0, l0, t_start = _IMR_CONFIGS[0]
+    t_j, modes_j = imr_jax(
+        m1 + m2,
+        (m1 / m2, e0, l0),
+        _DT,
+        t_start=t_start,
+        include_conjugate_modes=True,
+    )
+    modes_np = {lm: np.asarray(h) for lm, h in modes_j.items()}
+    incl, phic = 0.6, 0.9
+    hp_n, hc_n = get_polarizations_from_multipoles(modes_np, incl, np.pi / 2 - phic)
+    hp_j, hc_j = generator_jax.polarizations_from_modes_jax(
+        {lm: jnp.asarray(h) for lm, h in modes_j.items()}, incl, phic
+    )
+    scale = np.abs(hp_n).max()
+    assert np.abs(np.asarray(hp_j) - hp_n).max() < 1e-13 * scale
+    assert np.abs(np.asarray(hc_j) - hc_n).max() < 1e-13 * scale
+
+
+def test_polarizations_method_vs_numpy_waveform(imr_jax):
+    """Class polarizations vs get_imr_esigmasur_waveform at Tier D bounds."""
+    from esigmapy.surrogate.generator import get_imr_esigmasur_waveform
+
+    m1, m2, e0, l0, t_start = _IMR_CONFIGS[0]
+    incl, phic = 0.6, 0.0
+    hp_n, hc_n = get_imr_esigmasur_waveform(
+        mass1=m1,
+        mass2=m2,
+        delta_t=_DT,
+        reference_eccentricity=e0,
+        reference_mean_anomaly=l0,
+        t_start=t_start,
+        inclination=incl,
+        coa_phase=phic,
+    )
+    times, hp_j, hc_j = imr_jax.polarizations(
+        m1 + m2,
+        (m1 / m2, e0, l0),
+        _DT,
+        t_start=t_start,
+        inclination=incl,
+        coa_phase=phic,
+    )
+    assert float(hp_n.sample_times[0]) == pytest.approx(times[0], abs=1e-9)
+    n = min(len(hp_j), len(hp_n))
+    scale = np.abs(np.asarray(hp_n.data)).max()
+    # inspiral region agrees at backend-equivalence level; overall at the
+    # Tier D window-snapping level
+    assert np.abs(hp_j[: n // 3] - np.asarray(hp_n.data)[: n // 3]).max() < 1e-6 * scale
+    assert np.abs(hp_j[:n] - np.asarray(hp_n.data)[:n]).max() < 0.25 * scale
+    assert np.abs(hc_j[:n] - np.asarray(hc_n.data)[:n]).max() < 0.25 * scale
+
+
+def test_polarizations_inclination_gradient(imr_jax, imr_evaluator):
+    """d(hp)/d(inclination) through evaluator + polarization combine."""
+    import jax
+    import jax.numpy as jnp
+
+    _, fn = imr_evaluator
+    q, e0, l0 = _EVAL_PARAMS
+
+    def g(incl):
+        h, _ = fn(q, e0, l0)
+        modes = {(2, 2): h, (2, -2): jnp.conj(h)}
+        hp, _hc = generator_jax.polarizations_from_modes_jax(modes, incl, 0.0)
+        return jnp.sum(hp**2) * 1e36
+
+    incl = 0.6
+    ad = float(jax.grad(g)(incl))
+    eps = 1e-6
+    fd = float((g(incl + eps) - g(incl - eps)) / (2 * eps))
+    assert np.isfinite(ad)
+    assert abs(ad - fd) / max(abs(fd), 1e-30) < 1e-5
