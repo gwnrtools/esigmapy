@@ -477,3 +477,147 @@ def test_coa_phase_required_for_inspiral_alignment(imr_jax):
             t_start=-10.0,
             blend_aligning_merger_to_inspiral=False,
         )
+
+
+# --- Tier E: traced evaluator (jit / vmap / grad / GPU) ----------------------
+
+
+_EVAL_M, _EVAL_TS = 60.0, -40.0
+_EVAL_PARAMS = (41.4 / 18.6, 0.25, 1.3)
+
+
+@pytest.fixture(scope="module")
+def imr_evaluator(imr_jax):
+    times, fn = imr_jax.imr_parameter_space_evaluator(_EVAL_M, _DT, t_start=_EVAL_TS)
+    return times, fn
+
+
+@pytest.mark.parametrize("params", [_EVAL_PARAMS, (3.0, 0.2, 4.0)])
+def test_evaluator_matches_class_path(imr_jax, imr_evaluator, params):
+    """The traced evaluator reproduces the host __call__ path to round-off
+    (measured 2.1e-13 of peak; same kernels, different orchestration)."""
+    times, fn = imr_evaluator
+    t_c, modes_c = imr_jax(_EVAL_M, params, _DT, t_start=_EVAL_TS)
+    h_c = np.asarray(modes_c[(2, 2)])
+    h_e, vlen = fn(*params)
+    h_e, vlen = np.asarray(h_e), int(vlen)
+    assert h_e.dtype == np.complex128
+    assert vlen == len(h_c)
+    assert times[0] == pytest.approx(t_c[0], abs=1e-12)
+    peak = np.abs(h_c).max()
+    assert np.abs(h_e[:vlen] - h_c).max() < 1e-11 * peak
+    assert np.abs(h_e[vlen:]).max() == 0.0
+
+
+def test_evaluator_options_match_class(imr_jax):
+    q, e0, l0 = _EVAL_PARAMS
+    kw = dict(
+        blend_aligning_merger_to_inspiral=False,
+        coa_phase=0.7,
+        f_window_mr_transition=15.0,
+    )
+    t_c, modes_c = imr_jax(_EVAL_M, (q, e0, l0), _DT, t_start=_EVAL_TS, **kw)
+    h_c = np.asarray(modes_c[(2, 2)])
+    _, fn = imr_jax.imr_parameter_space_evaluator(_EVAL_M, _DT, t_start=_EVAL_TS, **kw)
+    h_e, vlen = fn(q, e0, l0)
+    h_e, vlen = np.asarray(h_e), int(vlen)
+    assert vlen == len(h_c)
+    assert np.abs(h_e[:vlen] - h_c).max() < 1e-11 * np.abs(h_c).max()
+
+
+def test_evaluator_amp_phase_output(imr_jax):
+    q, e0, l0 = _EVAL_PARAMS
+    _, fn_m = imr_jax.imr_parameter_space_evaluator(_EVAL_M, _DT, t_start=_EVAL_TS)
+    _, fn_ap = imr_jax.imr_parameter_space_evaluator(
+        _EVAL_M, _DT, t_start=_EVAL_TS, output="amp_phase"
+    )
+    h, vlen = fn_m(q, e0, l0)
+    amp, phase, vlen2 = fn_ap(q, e0, l0)
+    assert int(vlen) == int(vlen2)
+    assert np.asarray(amp).dtype == np.float64
+    assert np.asarray(phase).dtype == np.float64
+    n = int(vlen)
+    h_rec = np.asarray(amp)[:n] * np.exp(-1j * np.asarray(phase)[:n])
+    h = np.asarray(h)[:n]
+    assert np.abs(h_rec - h).max() < 1e-10 * np.abs(h).max()
+    assert np.asarray(amp)[n:].max() == 0.0
+
+
+def test_evaluator_jit_single_compile(imr_evaluator):
+    import jax
+
+    _, fn = imr_evaluator
+    jfn = jax.jit(fn)
+    q, e0, l0 = _EVAL_PARAMS
+    h1, v1 = jfn(q, e0, l0)
+    h2, v2 = jfn(q * 1.1, e0 + 0.02, l0 - 0.5)  # new values, same shapes
+    jax.block_until_ready(h2)
+    assert jfn._cache_size() == 1
+    # jit result equals eager result
+    h_e, v_e = fn(q, e0, l0)
+    assert int(v1) == int(v_e)
+    peak = np.abs(np.asarray(h_e)).max()
+    assert np.abs(np.asarray(h1) - np.asarray(h_e)).max() < 1e-10 * peak
+
+
+def test_evaluator_vmap_matches_loop(imr_evaluator):
+    import jax
+    import jax.numpy as jnp
+
+    _, fn = imr_evaluator
+    qs = jnp.array([2.0, 41.4 / 18.6, 3.0])
+    es = jnp.array([0.2, 0.25, 0.3])
+    ls = jnp.array([0.0, 1.3, 2.0])
+    hb, vb = jax.vmap(fn)(qs, es, ls)
+    for k in range(3):
+        h_k, v_k = fn(qs[k], es[k], ls[k])
+        assert int(vb[k]) == int(v_k)
+        peak = np.abs(np.asarray(h_k)).max()
+        assert np.abs(np.asarray(hb[k]) - np.asarray(h_k)).max() < 1e-10 * peak
+
+
+def test_evaluator_grad_matches_fd(imr_evaluator):
+    """Parameter-space gradients through the full IMR (inspiral surrogate,
+    transition window, NRSur7dq4 dynamics, blend) against central finite
+    differences (measured rel diffs 1.5e-4 / 1.9e-4 / 3.6e-6 for q/e/l).
+    The functional weights the valid region only; window indices are stable
+    over the FD step at this parameter point."""
+    import jax
+    import jax.numpy as jnp
+
+    _, fn = imr_evaluator
+    q, e0, l0 = _EVAL_PARAMS
+
+    def g(qq, ee, ll):
+        h, _vlen = fn(qq, ee, ll)
+        return jnp.sum(jnp.abs(h) ** 2) * 1e36
+
+    grads = jax.grad(g, argnums=(0, 1, 2))(q, e0, l0)
+    eps = 1e-6
+    fd = (
+        (g(q + eps, e0, l0) - g(q - eps, e0, l0)) / (2 * eps),
+        (g(q, e0 + eps, l0) - g(q, e0 - eps, l0)) / (2 * eps),
+        (g(q, e0, l0 + eps) - g(q, e0, l0 - eps)) / (2 * eps),
+    )
+    for name, a, b in zip("qel", grads, fd):
+        a, b = float(a), float(b)
+        assert np.isfinite(a), name
+        assert abs(a - b) / max(abs(b), 1e-30) < 5e-3, (name, a, b)
+
+
+def test_evaluator_gpu_matches_cpu(imr_jax):
+    import jax
+
+    try:
+        gpu = jax.devices("gpu")[0]
+    except Exception:
+        pytest.skip("no GPU available")
+    q, e0, l0 = _EVAL_PARAMS
+    _, fn = imr_jax.imr_parameter_space_evaluator(_EVAL_M, _DT, t_start=_EVAL_TS)
+    with jax.default_device(jax.devices("cpu")[0]):
+        h_cpu, v_cpu = fn(q, e0, l0)
+    with jax.default_device(gpu):
+        h_gpu, v_gpu = fn(q, e0, l0)
+    assert int(v_cpu) == int(v_gpu)
+    peak = np.abs(np.asarray(h_cpu)).max()
+    assert np.abs(np.asarray(h_gpu) - np.asarray(h_cpu)).max() < 1e-10 * peak

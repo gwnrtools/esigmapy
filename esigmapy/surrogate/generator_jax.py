@@ -193,6 +193,41 @@ def transition_frequency_window_jax(
     return f_window, start_found, jnp.asarray(True)
 
 
+def _f_isco_spin_zero_jax(M, q):
+    """``esigmapy.utils.f_ISCO_spin`` at zero spins, ported verbatim to jnp so
+    a traced mass ratio flows through (same operations, float64-identical)."""
+    Msun = lal.MTSUN_SI
+    k00 = -3.821158961
+    k10 = 3.79245
+    m1 = M * q / (1.0 + q) * Msun
+    m2 = M / (1.0 + q) * Msun
+    Mt = m1 + m2
+    eta = (m1 * m2) / (Mt**2)
+
+    # aeff = atot = 0 at zero spins: Z1 = 3, Z2 = 3, risco = 6 (Schwarzschild)
+    riscocap = 6.0
+    Eiscocap = jnp.sqrt(1 - (2 / (3 * riscocap)))
+    Liscocap = (2 / (3 * jnp.sqrt(3.0))) * (1 + 2 * jnp.sqrt(3 * riscocap - 2))
+
+    chichif = eta * (Liscocap - 2 * 0.0 * (Eiscocap - 1)) + k00 * eta**2 + k10 * eta**3
+    chichip = chichif
+
+    Z1p = 1 + ((1 - chichip**2) ** (1 / 3)) * (
+        ((1 + chichip) ** (1 / 3)) + ((1 - chichip) ** (1 / 3))
+    )
+    Z2p = jnp.sqrt(3 * chichip**2 + Z1p**2)
+    riscocapp = 3 + Z2p - jnp.sign(chichip) * jnp.sqrt((3 - Z1p) * (3 + Z1p + 2 * Z2p))
+
+    omegacap = 1 / (riscocapp ** (3 / 2) + chichip)
+    # Scap = 0 at zero spins -> SS = 1
+    Erad_by_M = (
+        0.0559745 * eta + 0.580951 * eta**2 - 0.960673 * eta**3 + 3.35241 * eta**4
+    )
+    Mfin = Mt * (1 - Erad_by_M)
+    fre = omegacap / (jnp.pi * Mfin)
+    return 1 / 2 * fre
+
+
 # --- IMR pipeline -------------------------------------------------------------
 
 
@@ -417,3 +452,181 @@ inspiral-to-merger transition frequency. `window_end_idx` is None."""
         if return_hybridization_info:
             return times, retval, modes_imr
         return times, modes_imr
+
+    def imr_parameter_space_evaluator(
+        self,
+        M,
+        delta_t,
+        t_start=None,
+        distance=1.0,
+        coa_phase=0.0,
+        f_mr_transition=None,
+        f_window_mr_transition=None,
+        num_hyb_orbits=0.25,
+        blend_aligning_merger_to_inspiral=True,
+        keep_f_mr_transition_at_center=False,
+        failsafe=True,
+        output="mode",
+    ):
+        """Return ``(times, fn)`` with ``fn(q, e_ref, l_ref)`` a pure,
+        JAX-traceable IMR evaluator (compose with ``jax.jit``, ``jax.vmap``,
+        ``jax.grad``).
+
+        The full grid configuration (``M``, ``delta_t``, ``t_start``) and all
+        pipeline options are fixed host-side; the returned ``times`` has the
+        static length ``num_inspiral_samples + num_mr_samples`` with t=0 at
+        the end of inspiral. ``fn`` returns ``(h, valid_len)`` for
+        ``output="mode"`` -- the complex (2,2) IMR mode, exactly zero at and
+        beyond the traced ``valid_len`` -- or ``(amp, phase, valid_len)`` for
+        ``output="amp_phase"`` (``h = amp * exp(-1j * phase)``; amp zeroed
+        beyond ``valid_len``), the natural form for gradients of
+        phase-dependent functionals.
+
+        Notes:
+
+        * Like ``parameter_space_evaluator`` of the inspiral surrogate, ``fn``
+          performs NO parameter-range checks and has no circular fallback;
+          validate with ``self.ecc_sur.check_param_range`` beforehand.
+        * The blend's window indices are integers (frequency-bracket
+          searches), so ``fn`` is piecewise-smooth in its parameters:
+          gradients are exact within a window-index cell and undefined at the
+          (measure-zero) cell boundaries where an index jumps.
+        * Failsafe behaves as ``failsafe=True`` semantics inside the trace
+          (clamps, never raises).
+        """
+        if output not in ("mode", "amp_phase"):
+            raise ValueError(f"output must be 'mode' or 'amp_phase', got {output!r}.")
+
+        ecc = self.ecc_sur
+        (
+            t_start_r,
+            _t_end,
+            _insp_grid,
+            num_samples,
+            query,
+            in_start_t,
+            in_bucket_t,
+            tg0,
+            tdg,
+            amp_scale,
+        ) = ecc._grid_setup(M, delta_t, t_start, None, None)
+        body = ecc._body
+        circ = ecc.circ_sur
+        circ_scale = M / circ.sur_total_mass
+        in_start_j = jnp.asarray(in_start_t)
+        tg0_j = jnp.asarray(tg0)
+        tdg_j = jnp.asarray(tdg)
+        amp_scale_j = jnp.asarray(amp_scale)
+
+        mr = self.mr_sur
+        gws = mr._gws
+        mr_data = mr.data
+        n_mr = mr.num_samples(M, delta_t)
+        times_M_j = jnp.asarray(
+            mr.t_coorb[0] + np.arange(n_mr) * (delta_t / (M * lal.MTSUN_SI))
+        )
+        mr_scale = M * lal.MRSUN_SI / (distance * 1.0e6 * lal.PC_SI)
+        # exp(-i*m*coa_phase) phase convention of lalsim TD modes, m=2
+        mr_phasor = complex(np.exp(-1j * 2.0 * coa_phase))
+        zeros3 = jnp.zeros(3, dtype=jnp.float64)
+        init_quat = jnp.asarray(gws._IDENTITY_QUATERNION, dtype=jnp.float64)
+
+        em = 2
+        f_schwarz = 6.0**-1.5 / M / lal.MTSUN_SI / lal.PI
+        seconds_per_M = M * lal.MTSUN_SI
+        n_win_buf = n_mr - 1  # static, safely bounds any window length
+        n_out = num_samples + n_mr
+        t_peak = (num_samples - 1) * delta_t
+        times = -t_peak + np.arange(n_out) * delta_t
+        align = bool(blend_aligning_merger_to_inspiral)
+        centered = bool(keep_f_mr_transition_at_center)
+        f_tr_user = None if f_mr_transition is None else float(f_mr_transition)
+        f_win_user = (
+            None if f_window_mr_transition is None else float(f_window_mr_transition)
+        )
+
+        def fn(q, e_ref, l_ref):
+            eta = q / (1.0 + q) ** 2  # eta_from_q, in traceable form
+            amp0, phase0 = circ._eval_padded(
+                M, eta, circ_scale, t_start_r, query, remove_initial_phase=True
+            )
+            amp, phase, _e_orb, x_orb, _l_s, _mao = body(
+                eta,
+                e_ref,
+                l_ref,
+                in_start_j,
+                in_bucket_t,
+                True,
+                tg0_j,
+                tdg_j,
+                query,
+                amp0,
+                phase0,
+                amp_scale_j,
+                with_orbital=True,
+            )
+            amp = amp[:num_samples] / distance
+            phase = phase[:num_samples]
+            h22 = amp * jnp.exp(-1j * phase)
+            orbital_freq = x_orb[:num_samples] ** 1.5 / seconds_per_M / _TWO_PI
+
+            if f_tr_user is None:
+                f_tr = jnp.minimum(_f_isco_spin_zero_jax(M, q), f_schwarz)
+            else:
+                f_tr = jnp.asarray(f_tr_user)
+            if failsafe:
+                # `phase` is the unwrapped (2,2) phase, so its derivative is
+                # the mode frequency computed by the NumPy driver's clamp
+                mode_freq = blend_jax.compute_frequency_jax(phase, delta_t)
+                f_tr = jnp.minimum(f_tr, jnp.max(mode_freq))
+            if f_win_user is None:
+                f_win, _sf, _ef = transition_frequency_window_jax(
+                    orbital_freq, delta_t, f_tr / em, num_hyb_orbits, centered
+                )
+                f_win = f_win * em
+            else:
+                f_win = jnp.asarray(f_win_user)
+            if not centered:
+                f_tr = f_tr - f_win / 2.0
+
+            h_dimless, _dyn, _y = gws._evaluate_dimensionless_modes(
+                mr_data, q, zeros3, zeros3, init_quat, 0.0, 2
+            )
+            h_mr = gws._resample_modes(
+                mr_data, h_dimless[_MODE_22_ROW : _MODE_22_ROW + 1], times_M_j
+            )[0] * (mr_scale * mr_phasor)
+
+            fr_mr = blend_jax.compute_frequency_jax(
+                blend_jax.compute_phase_jax(h_mr), delta_t
+            )
+            t1_insp, _t2_insp, t1_mr, t2_mr, _found = (
+                blend_jax.locate_blend_indices_jax(fr_mr, orbital_freq, f_tr, f_win, em)
+            )
+            n_win = t2_mr - t1_mr
+            i = jnp.arange(n_win_buf + 1)
+            frq_mr_w = jnp.take(fr_mr, jnp.clip(t1_mr + i, 0, n_mr - 1))
+            frq_insp_w = blend_jax.windowed_mode_frequency_jax(
+                h22, delta_t, t1_insp, n_win_buf
+            )
+            hyb, valid_len, *_diag = blend_jax.blend_single_mode_jax(
+                h22,
+                h_mr,
+                delta_t,
+                t1_insp,
+                t1_mr,
+                n_win,
+                frq_insp_w,
+                frq_mr_w,
+                n_win_buf,
+                align,
+            )
+            if output == "mode":
+                return hyb, valid_len
+            j = jnp.arange(n_out)
+            mask = j < valid_len
+            safe = jnp.where(mask, hyb, 1.0 + 0.0j)
+            amp_h = jnp.where(mask, jnp.abs(safe), 0.0)
+            phase_h = blend_jax.compute_phase_jax(safe)
+            return amp_h, phase_h, valid_len
+
+        return times, fn
