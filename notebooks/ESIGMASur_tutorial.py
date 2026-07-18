@@ -1242,3 +1242,373 @@ ax.text(
     fontsize=10,
 )
 plt.tight_layout()
+
+# %% [markdown]
+# <hr style="border: 2px solid #555; margin: 20px 0;">
+
+# %% [markdown]
+# ## 5. The JAX IMR surrogate
+#
+# Section 4 covered the JAX backend of the *inspiral* surrogate. This section covers its extension to the complete **inspiral-merger-ringdown** waveform: `IMRESIGMASurJAX` (`esigmapy.surrogate.generator_jax`), the JAX counterpart of section 2's `get_imr_esigmasur_mode`/`get_imr_esigmasur_waveform`. It composes, entirely inside JAX:
+#
+# 1. the JAX inspiral surrogate of section 4 (including its PN-parameter $x$ evolution, from which the orbit-averaged orbital frequency is derived),
+# 2. a JAX port of the transition-frequency-window computation and of the mode hybridization (`esigmapy.blend_jax` — sin$^2$ amplitude/frequency blending with fixed-shape, jit-safe kernels), and
+# 3. the **JAX port of `NRSur7dq4`** from `gwsurrogate.jax` as the quasi-circular plunge-merger-ringdown piece, evaluated over its full span (the blend re-aligns time and phase, so no `f_lower` bookkeeping is needed).
+#
+# Because every step is JAX-traceable, the *whole IMR waveform* — not just the inspiral — supports `jax.jit`, `jax.vmap` batching, `jax.grad` and GPU execution.
+#
+# **Requirements**: the `gwsurrogate` source tree containing the JAX port (importable, or pointed to by the environment variable `GWSURROGATE_JAX_PATH`), with the `NRSur7dq4.h5` data file in its `surrogate_downloads/` directory. As in section 4, import `esigmapy.surrogate` JAX modules before any other code that creates JAX arrays.
+#
+# **Accuracy relative to the NumPy backend** (established by the tiered test suite in `tests/test_blend_jax.py` and `tests/test_imr_jax.py`):
+#
+# - the ported blend and window computations reproduce the NumPy code to $\sim 10^{-12}$ on identical inputs, and the full driver matches to $\sim 10^{-10}$ of peak when fed the same merger-ringdown arrays;
+# - the two `NRSur7dq4` implementations (gwsurrogate-JAX here vs `lalsimulation` in the NumPy backend) agree to $\sim 2\times10^{-4}$ in amplitude and $\sim 10^{-3}$ rad in phase;
+# - the end-to-end IMR waveforms therefore agree at the $10^{-5}\text{–}10^{-4}$ *mismatch* level (quantified in section 5.7), dominated by the discrete snapping of the blending window on the two backends' differently-phased merger-ringdown grids.
+
+# %% [markdown]
+# ### 5.1 Constructing and evaluating
+#
+# Construction loads the inspiral surrogate data (as in section 4.1) plus the NRSur7dq4 data. The call signature mirrors the surrogate-style `(M, params)` form; options mirror `get_imr_esigmasur_mode` (transition frequency and window overrides, `num_hyb_orbits`, alignment direction, conjugate modes, orbital parameters, hybridization info). It returns plain arrays `(times, modes_dict)` with the same convention as the NumPy backend: $t=0$ at the end of inspiral.
+
+# %%
+from esigmapy.surrogate.generator_jax import IMRESIGMASurJAX
+
+imr_jax = IMRESIGMASurJAX(
+    ecc_data_dir=os.path.join(sur_data_dir, "ecc_sur_data"),
+    circ_data_dir=os.path.join(sur_data_dir, "circ_sur_data"),
+)
+
+# %%
+m1_imr, m2_imr = 41.4, 18.6
+M_imr = m1_imr + m2_imr
+q_imr = m1_imr / m2_imr
+e_imr, l_imr = 0.25, 1.3
+delta_t = 1 / 2**12
+t_start_imr = -40.0
+
+t_j, modes_j = imr_jax(
+    M_imr, (q_imr, e_imr, l_imr), delta_t, t_start=t_start_imr
+)
+modes_np_imr = esigmasur.get_imr_esigmasur_mode(
+    mass1=m1_imr,
+    mass2=m2_imr,
+    reference_eccentricity=e_imr,
+    reference_mean_anomaly=l_imr,
+    delta_t=delta_t,
+    t_start=t_start_imr,
+)
+h22_np = np.asarray(modes_np_imr[(2, 2)].data)
+
+fig, axs = plt.subplots(1, 2, figsize=(12, 4), width_ratios=[2.2, 1])
+fig.suptitle(
+    rf"$m_1={m1_imr} M_\odot, m_2={m2_imr} M_\odot, e_{{\rm{{ref}}}}={e_imr}, l_{{\rm{{ref}}}}={l_imr}$"
+)
+for ax, (lo, hi) in zip(axs, [(t_j[0], t_j[-1]), (-0.25, 0.06)]):
+    ax.plot(t_j, np.real(modes_j[(2, 2)]), color="#D97706", label="JAX IMR")
+    ax.plot(
+        modes_np_imr[(2, 2)].sample_times.data,
+        h22_np.real,
+        color="#1E90FF",
+        ls="--",
+        label="NumPy IMR",
+    )
+    ax.set_xlim(lo, hi)
+    ax.set_xlabel(r"$t (s)$")
+axs[0].set_ylabel(r"$\Re(h_{22})$")
+axs[1].set_title("merger-ringdown zoom")
+axs[0].legend(frameon=False)
+plt.tight_layout()
+
+# %% [markdown]
+# The two backends overlay through inspiral, merger and ringdown. (They use *different implementations* of `NRSur7dq4` for the merger-ringdown piece, so unlike section 4 the agreement here is at the accuracy floor stated above, not at round-off.)
+
+# %% [markdown]
+# ### 5.2 The traced evaluator: `jit`
+#
+# As in section 4.2, the JAX-only features come from a *pure-function* factory: `imr_parameter_space_evaluator` fixes the grid configuration (`M`, `delta_t`, `t_start`) and all pipeline options host-side and returns
+#
+# ```python
+# fn(q, e_ref, l_ref) -> (h, valid_len)
+# ```
+#
+# One wrinkle is new compared to the inspiral evaluator: the *length* of an IMR waveform depends on where the blending window lands, which depends on the (traced) parameters — but JAX requires static array shapes. `fn` therefore returns `h` on a **fixed-length buffer** (`len(times)` = inspiral samples + merger-ringdown samples) together with the traced number of physically valid samples `valid_len`; entries at and beyond `valid_len` are exactly zero. Since the ringdown has decayed to zero there anyway, downstream array-wide operations (overlaps, matched filters) can typically use the buffer as-is.
+#
+# > The evaluator performs no parameter-range checks and does not support the tiny-$e_{\rm{ref}}$ circular fallback (see the note in section 4.2). One further caveat specific to the IMR pipeline: the blending-window boundaries are integer sample indices, so `fn` is *piecewise*-smooth in its parameters — gradients are exact within a window-index cell and undefined exactly at the (measure-zero) parameter points where an index jumps.
+
+# %%
+import time as _time
+
+times_imr, fn_imr = imr_jax.imr_parameter_space_evaluator(
+    M_imr, delta_t, t_start=t_start_imr
+)
+fn_imr_jit = jax.jit(fn_imr)
+
+tic = _time.perf_counter()
+h_e, valid_len = fn_imr_jit(q_imr, e_imr, l_imr)
+jax.block_until_ready(h_e)
+compile_time = _time.perf_counter() - tic
+
+tic = _time.perf_counter()
+h_e, valid_len = fn_imr_jit(q_imr * 1.01, e_imr, l_imr)
+jax.block_until_ready(h_e)
+steady_time = _time.perf_counter() - tic
+
+print(f"first call (traces + compiles): {compile_time:.1f} s")
+print(f"steady state:                   {steady_time * 1e3:.1f} ms")
+print(f"buffer length: {len(times_imr)}, valid samples: {int(valid_len)}")
+
+# %% [markdown]
+# ### 5.3 Batched evaluations over the parameter space
+#
+# `fn` composes with `jax.vmap` exactly as in section 4.2 — one vectorized call evaluates a whole batch of complete IMR waveforms (each batch entry carries its own `valid_len`).
+
+# %%
+q_batch = jnp.array([1.5, 2.226, 3.5, 5.0])
+e_batch = jnp.array([0.1, 0.25, 0.35, 0.2])
+l_batch = jnp.array([0.0, 1.3, 3.1, 5.0])
+
+batched_imr = jax.jit(jax.vmap(fn_imr))
+h_batch, vlen_batch = batched_imr(q_batch, e_batch, l_batch)
+print("batched IMR array shape:", h_batch.shape)
+print("valid lengths:", np.asarray(vlen_batch))
+
+fig, axs = plt.subplots(len(q_batch), sharex=True, figsize=(10, 8))
+fig.suptitle(rf"One vmapped call: {len(q_batch)} IMR waveforms at $M={M_imr}M_\odot$")
+for i, ax in enumerate(axs):
+    ax.plot(times_imr, np.asarray(h_batch[i]).real, color="#9467BD", lw=0.8)
+    ax.set_ylabel(rf"$\Re(h_{{22}})$")
+    ax.text(
+        0.02,
+        0.9,
+        rf"$q={q_batch[i]:.2f}, e_{{\rm{{ref}}}}={e_batch[i]:.2f}, l_{{\rm{{ref}}}}={l_batch[i]:.1f}$",
+        transform=ax.transAxes,
+        va="top",
+    )
+    ax.set_xlim(-2.0, 0.15)
+plt.xlabel(r"$t (s)$")
+plt.tight_layout()
+
+# %% [markdown]
+# ### 5.4 Gradients through merger and ringdown
+#
+# `jax.grad` differentiates scalars built from the *complete* IMR waveform with respect to the physical parameters — the derivative chain runs through the inspiral surrogate kernels, the transition-window search, the NRSur7dq4 precession-dynamics integration and the blend. Below we differentiate the simple energy-like functional $g = \sum_i |h_i|^2$ and verify against central finite differences.
+#
+# For *waveform-level* sensitivities (a full time series of derivatives), forward mode is the right tool: one `jax.jvp` call gives $\partial h(t)/\partial e_{\rm{ref}}$ at every sample for the cost of roughly one extra evaluation. With `output="amp_phase"` the evaluator returns the real pair `(amp, phase)`, so the phase sensitivity is directly accessible.
+
+# %%
+def g_imr(qq, ee, ll):
+    h, _ = fn_imr(qq, ee, ll)
+    return jnp.sum(jnp.abs(h) ** 2) * 1e36
+
+
+grad_g = jax.jit(jax.grad(g_imr, argnums=(0, 1, 2)))
+gq, ge, gl = grad_g(q_imr, e_imr, l_imr)
+
+eps = 1e-6
+fd_e = (g_imr(q_imr, e_imr + eps, l_imr) - g_imr(q_imr, e_imr - eps, l_imr)) / (2 * eps)
+print(f"dg/dq = {float(gq):+.6e},  dg/de_ref = {float(ge):+.6e},  dg/dl_ref = {float(gl):+.6e}")
+print(f"dg/de_ref vs finite differences: rel. diff = {abs(float(ge) - float(fd_e)) / abs(float(fd_e)):.1e}")
+
+# %%
+_, fn_imr_ap = imr_jax.imr_parameter_space_evaluator(
+    M_imr, delta_t, t_start=t_start_imr, output="amp_phase"
+)
+
+# forward-mode: d(amp)/d(e_ref) and d(phase)/d(e_ref) over the whole waveform
+(amp, phase, vlen), (damp, dphase, _) = jax.jvp(
+    lambda ee: fn_imr_ap(q_imr, ee, l_imr), (e_imr,), (1.0,)
+)
+n_valid = int(vlen)
+
+fig, axs = plt.subplots(2, sharex=True, figsize=(10, 6))
+fig.suptitle(
+    rf"Waveform sensitivity to eccentricity at $q={q_imr:.2f}, e_{{\rm{{ref}}}}={e_imr}$ (one jax.jvp call)"
+)
+axs[0].plot(times_imr[:n_valid], np.asarray(damp)[:n_valid], color="#D97706")
+axs[0].set_ylabel(r"$\partial A(t) / \partial e_{\rm{ref}}$")
+axs[1].plot(times_imr[:n_valid], np.asarray(dphase)[:n_valid], color="#9467BD")
+axs[1].set_ylabel(r"$\partial \phi(t) / \partial e_{\rm{ref}}$ (rad)")
+axs[1].set_xlabel(r"$t (s)$")
+plt.tight_layout()
+
+# %% [markdown]
+# The phase sensitivity grows monotonically through the inspiral (eccentricity changes the accumulated phase) and freezes after the merger — beyond the blending window the waveform is the quasi-circular merger-ringdown, whose phase is set by continuity at the window's end.
+
+# %% [markdown]
+# ### 5.5 Polarizations
+#
+# `polarizations` mirrors `get_imr_esigmasur_waveform` (section 2.1): it combines the $(2, \pm 2)$ modes with analytic spin-weighted harmonics. The combination step (`polarizations_from_modes_jax`) is itself traceable, so gradients with respect to *extrinsic* angles come for free.
+
+# %%
+from esigmapy.surrogate.generator_jax import polarizations_from_modes_jax
+
+t_pol, hp_j, hc_j = imr_jax.polarizations(
+    M_imr,
+    (q_imr, e_imr, l_imr),
+    delta_t,
+    t_start=t_start_imr,
+    inclination=inclination,
+)
+
+plt.figure(figsize=(10, 4))
+plt.title(
+    rf"$m_1={m1_imr} M_\odot, m_2={m2_imr} M_\odot, e_{{\rm{{ref}}}}={e_imr}, \iota={inclination:.2f}$"
+)
+plt.plot(t_pol, hp_j, label=r"$h_+$")
+plt.plot(t_pol, hc_j, label=r"$h_\times$")
+plt.xlim(-1.5, 0.15)
+plt.xlabel(r"$t (s)$")
+plt.ylabel(r"$h$")
+plt.legend(frameon=False)
+plt.tight_layout()
+
+# %%
+def hp_energy(incl):
+    h, _ = fn_imr(q_imr, e_imr, l_imr)
+    modes = {(2, 2): h, (2, -2): jnp.conj(h)}
+    hp, _hc = polarizations_from_modes_jax(modes, incl, 0.0)
+    return jnp.sum(hp**2) * 1e36
+
+
+d_incl = jax.grad(hp_energy)(inclination)
+print(f"d(sum hp^2)/d(inclination) at iota={inclination:.2f}: {float(d_incl):+.4e}")
+
+# %% [markdown]
+# ### 5.6 Evaluation speed: single, batched, CPU vs GPU, and vs the NumPy backend
+#
+# We time the jitted IMR evaluator — singly and `vmap`-batched — on the CPU and (when available) the GPU, against the NumPy backend's `get_imr_esigmasur_mode`, all at the configuration of section 5.1. Median lines and min/max bands have the same meaning as in section 4.6; compilation is excluded. As in section 4, single-call latency on a GPU is dispatch-bound — batching is where the GPU pays off.
+#
+# > **Note:** the following cell may take a few minutes to run.
+
+# %%
+import statistics
+
+imr_batch_sizes = [1, 4, 16]
+imr_bench_devices = {"CPU": jax.devices("cpu")[0]}
+try:
+    imr_bench_devices["GPU"] = jax.devices("gpu")[0]
+except RuntimeError:
+    print("No GPU visible to JAX -- computing the CPU curves only.")
+
+rng = np.random.default_rng(seed=11)
+imr_single_times = {}
+imr_batched_times = {dev: [] for dev in imr_bench_devices}
+
+for dev_name, dev in imr_bench_devices.items():
+    with jax.default_device(dev):
+        _, fn_b = imr_jax.imr_parameter_space_evaluator(
+            M_imr, delta_t, t_start=t_start_imr
+        )
+        fnj = jax.jit(fn_b)
+        jax.block_until_ready(fnj(q_imr, e_imr, l_imr)[0])
+        imr_single_times[dev_name] = time_samples(
+            lambda: jax.block_until_ready(fnj(q_imr, e_imr, l_imr)[0])
+        )
+        vfn = jax.jit(jax.vmap(fn_b))
+        for B in imr_batch_sizes:
+            qs = jnp.asarray(rng.uniform(1.5, 5.0, B))
+            es = jnp.asarray(rng.uniform(0.05, 0.4, B))
+            ls = jnp.asarray(rng.uniform(0.0, 2 * np.pi, B))
+            jax.block_until_ready(vfn(qs, es, ls)[0])
+            samples = time_samples(
+                lambda: jax.block_until_ready(vfn(qs, es, ls)[0]), nloop=5
+            )
+            imr_batched_times[dev_name].append([s / B for s in samples])
+
+numpy_imr_times = time_samples(
+    lambda: esigmasur.get_imr_esigmasur_mode(
+        mass1=m1_imr,
+        mass2=m2_imr,
+        reference_eccentricity=e_imr,
+        reference_mean_anomaly=l_imr,
+        delta_t=delta_t,
+        t_start=t_start_imr,
+    ),
+    nloop=5,
+)
+
+fig, ax = plt.subplots()
+ax.set_title(
+    rf"IMR evaluation cost at $M={M_imr}M_\odot$, $t_{{\rm{{start}}}}={t_start_imr}$s, $f_s={1/delta_t:.0f}$Hz"
+)
+ax.set_xlabel("Batch size")
+ax.set_ylabel("Evaluation time per waveform (ms)")
+ax.set_xscale("log", base=2)
+ax.set_yscale("log")
+ax.axhline(
+    np.median(numpy_imr_times) * 1e3,
+    color="#1E90FF",
+    ls="--",
+    label="NumPy backend, single evaluation",
+)
+imr_device_style = {"CPU": dict(ls="-"), "GPU": dict(ls=":", mfc="none")}
+for dev_name in imr_bench_devices:
+    ax.axhline(
+        np.median(imr_single_times[dev_name]) * 1e3,
+        color="#D97706",
+        **{k: v for k, v in imr_device_style[dev_name].items() if k == "ls"},
+        label=f"JAX jitted, single, {dev_name}",
+    )
+    plot_with_band(
+        ax,
+        imr_batch_sizes,
+        imr_batched_times[dev_name],
+        color="#9467BD",
+        marker="^",
+        label=f"JAX batched, per waveform, {dev_name}",
+        **imr_device_style[dev_name],
+    )
+plt.xticks(imr_batch_sizes, [str(b) for b in imr_batch_sizes])
+plt.legend(frameon=False, fontsize=10)
+plt.tight_layout()
+
+# %% [markdown]
+# ### 5.7 Accuracy: mismatch distribution against the NumPy IMR backend
+#
+# Finally, the counterpart of section 4.8 for the full IMR pipeline. Because the merger-ringdown pieces are *different implementations* of `NRSur7dq4` — and the blending window snaps to each backend's own sample grid — the agreement floor here is set by physics-level implementation differences, not round-off: mismatches sit at the $10^{-6}\text{–}10^{-4}$ level (compare: typical NR-calibration accuracy targets are $\sim 10^{-3}$). The inspiral portions agree to $\sim 10^{-11}$ rad in phase, as in section 4.8.
+#
+# > **Note:** the following cell may take a few minutes to run.
+
+# %%
+num_imr_draws = 40
+rng = np.random.default_rng(seed=5)
+q_arr = rng.uniform(1.5, 5.0, size=num_imr_draws)
+e_arr = rng.uniform(0.05, 0.4, size=num_imr_draws)
+l_arr = rng.uniform(0.0, 2 * np.pi, size=num_imr_draws)
+
+imr_mismatches = []
+for i in range(num_imr_draws):
+    h_j, vlen = fn_imr_jit(q_arr[i], e_arr[i], l_arr[i])
+    h_j = np.asarray(h_j)[: int(vlen)]
+    modes_i = esigmasur.get_imr_esigmasur_mode(
+        mass1=M_imr * q_arr[i] / (1 + q_arr[i]),
+        mass2=M_imr / (1 + q_arr[i]),
+        reference_eccentricity=e_arr[i],
+        reference_mean_anomaly=l_arr[i],
+        delta_t=delta_t,
+        t_start=t_start_imr,
+    )
+    h_n = np.asarray(modes_i[(2, 2)].data)
+    n = min(len(h_j), len(h_n))
+    imr_mismatches.append(mismatch(h_j[:n], h_n[:n]))
+
+imr_mismatches = np.asarray(imr_mismatches)
+print(
+    f"median mismatch: {np.median(imr_mismatches):.2e}, "
+    f"max: {imr_mismatches.max():.2e}"
+)
+
+# %%
+fig, ax = plt.subplots()
+ax.set_title(
+    rf"JAX vs NumPy IMR mismatches: {num_imr_draws} random draws at $M={M_imr:.0f}M_\odot$"
+)
+bins = np.logspace(-8, -3, 26)
+ax.hist(imr_mismatches, bins=bins, color="#D97706", edgecolor="white", linewidth=0.5)
+ax.set_xscale("log")
+ax.set_xlabel(r"mismatch $1-\mathcal{O}$")
+ax.set_ylabel("Number of draws")
+plt.tight_layout()
+
+# %% [markdown]
+# **Summary.** `IMRESIGMASurJAX` provides the complete eccentric IMR waveform as a pure JAX function: jitted single evaluations are faster than the NumPy pipeline (and dramatically so for long waveforms), `vmap` batches amortize overheads further (especially on GPUs), and exact parameter-space gradients cost only a small multiple of a forward evaluation — while reproducing the NumPy backend at the accuracy floor set by the shared `NRSur7dq4` model's implementations.
