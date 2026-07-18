@@ -35,9 +35,90 @@ from . import surrogate_jax  # noqa: F401  (enables jax x64 via TPI_jax)
 import jax
 import jax.numpy as jnp
 
+import lal
+
 from .. import blend_jax
 
 _TWO_PI = 2.0 * np.pi
+
+
+def _import_gwsurrogate_jax():
+    """Import ``gwsurrogate.jax.surrogate`` (the JAX NRSur7dq4 port).
+
+    The JAX port lives only in the gwsurrogate source tree; if the package is
+    not importable (or importable without the ``jax`` subpackage), locate the
+    source tree via ``$GWSURROGATE_JAX_PATH`` or the ``gwsurrogate`` directory
+    sitting beside the esigmapy repository."""
+    try:
+        from gwsurrogate.jax import surrogate as gws_jax_surrogate
+
+        return gws_jax_surrogate
+    except ModuleNotFoundError:
+        pass
+    candidates = []
+    env = os.environ.get("GWSURROGATE_JAX_PATH")
+    if env:
+        candidates.append(env)
+    repo_root = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
+    candidates.append(os.path.join(os.path.dirname(repo_root), "gwsurrogate"))
+    for cand in candidates:
+        if os.path.isdir(os.path.join(cand, "gwsurrogate", "jax")):
+            sys.path.insert(0, cand)
+            break
+    from gwsurrogate.jax import surrogate as gws_jax_surrogate
+
+    return gws_jax_surrogate
+
+
+# --- merger-ringdown: NRSur7dq4 ----------------------------------------------
+
+# NRSur7dq4 mode-row ordering for ell_max=2: (2,-2), (2,-1), (2,0), (2,1), (2,2)
+_MODE_2M2_ROW = 0
+_MODE_22_ROW = 4
+
+
+class NRSurMergerRingdownJAX:
+    """Non-spinning NRSur7dq4 (2, +-2) modes on a uniform physical time grid.
+
+    The merger-ringdown piece of the JAX IMR pipeline. Modes are evaluated
+    over the full NRSur7dq4 span (~[-4300, +100] M around the peak) -- no
+    ``f_lower`` truncation; the blend discards samples ahead of its window.
+    """
+
+    def __init__(self, h5_path=None):
+        self._gws = _import_gwsurrogate_jax()
+        self._sur = self._gws.NRSur7dq4JAX(h5_path)
+        self.data = self._sur.data
+        self.t_coorb = np.asarray(self._sur.t_coorb, dtype=np.float64)
+
+    def num_samples(self, M, delta_t):
+        """Number of ``delta_t`` samples spanning the full surrogate (host)."""
+        span = (self.t_coorb[-1] - self.t_coorb[0]) * M * lal.MTSUN_SI
+        return int(np.floor(span / delta_t)) + 1
+
+    def modes_2pm2(self, q, M, delta_t, distance, n_mr):
+        """(2,2) and (2,-2) modes; traceable in ``q``, ``M``, ``distance``.
+
+        ``delta_t`` (s) and the static sample count ``n_mr`` (which must keep
+        the grid inside the surrogate span, cf. ``num_samples``) define the
+        uniform output grid starting at the surrogate's first sample. Returns
+        a dict {(2, 2): ..., (2, -2): ...} of complex (n_mr,) arrays scaled to
+        ``M`` solar masses at ``distance`` Mpc (lalsimulation convention).
+        """
+        zeros3 = jnp.zeros(3, dtype=jnp.float64)
+        init_quat = jnp.asarray(self._gws._IDENTITY_QUATERNION, dtype=jnp.float64)
+        h, _, _ = self._gws._evaluate_dimensionless_modes(
+            self.data, q, zeros3, zeros3, init_quat, 0.0, 2
+        )
+        rows = h[jnp.array([_MODE_22_ROW, _MODE_2M2_ROW])]
+        seconds_per_M = M * lal.MTSUN_SI
+        times_M = self.t_coorb[0] + jnp.arange(n_mr) * (delta_t / seconds_per_M)
+        res = self._gws._resample_modes(self.data, rows, times_M)
+        amp_scale = M * lal.MRSUN_SI / (distance * 1.0e6 * lal.PC_SI)
+        res = res * amp_scale
+        return {(2, 2): res[0], (2, -2): res[1]}
 
 
 # --- transition frequency window ---------------------------------------------

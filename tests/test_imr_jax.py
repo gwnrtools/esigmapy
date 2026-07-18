@@ -133,3 +133,81 @@ def test_transition_window_jit_traceable(orbital_freqs):
         None, orbital_freqs["ecc_high"], _DT, f_tr, 0.25, False, True, failsafe=True
     )
     assert float(fn(f_tr)) == pytest.approx(expected, rel=1e-10)
+
+
+# --- Tier C: gwsurrogate-JAX NRSur7dq4 vs lalsim NRSur7dq4 -------------------
+
+
+def _subsample_peak_time(h, dt):
+    a = np.abs(h)
+    i = int(np.argmax(a))
+    y0, y1, y2 = a[i - 1], a[i], a[i + 1]
+    return (i + 0.5 * (y0 - y2) / (y0 - 2 * y1 + y2)) * dt
+
+
+@pytest.fixture(scope="module")
+def nrsur_mr():
+    try:
+        return generator_jax.NRSurMergerRingdownJAX()
+    except Exception as exc:  # pragma: no cover - environment dependent
+        pytest.skip(f"JAX NRSur7dq4 unavailable: {exc}")
+
+
+@pytest.mark.parametrize("m1,m2", [(41.4, 18.6), (30.0, 30.0)])
+def test_nrsur_jax_vs_lalsim_characterization(nrsur_mr, m1, m2):
+    """The two NRSur7dq4 implementations (gwsurrogate-JAX vs lalsimulation)
+    read the same model but differ in codebase and grid conditioning; after
+    sub-sample peak alignment and constant phase-offset removal they agree to
+    ~2e-4 in amplitude (of peak) and ~1.5e-3 rad in phase over the usable
+    band (measured 2026-07; bounds hold 2.5x margin). This floor drives the
+    Tier D full-IMR tolerances."""
+    from esigmapy import blend
+    from esigmapy.mr_generator import get_mr_modes
+
+    M, q = m1 + m2, max(m1 / m2, m2 / m1)
+    n_mr = nrsur_mr.num_samples(M, _DT)
+    h_j = np.asarray(nrsur_mr.modes_2pm2(q, M, _DT, 1.0, n_mr)[(2, 2)])
+    try:
+        h_n = np.asarray(
+            get_mr_modes(
+                mass1=m1,
+                mass2=m2,
+                f_lower=30.0,
+                f_ref=30.0,
+                delta_t=_DT,
+                modes_to_use=[(2, 2), (2, -2)],
+                approximant="NRSur7dq4",
+            )[(2, 2)]
+        )
+    except Exception as exc:  # pragma: no cover - environment dependent
+        pytest.skip(f"lalsim NRSur7dq4 unavailable: {exc}")
+
+    assert np.abs(h_j).max() == pytest.approx(np.abs(h_n).max(), rel=1e-3)
+
+    t_j = np.arange(len(h_j)) * _DT - _subsample_peak_time(h_j, _DT)
+    t_n = np.arange(len(h_n)) * _DT - _subsample_peak_time(h_n, _DT)
+    ph_j = blend.compute_phase(h_j)
+    ph_n = blend.compute_phase(h_n)
+
+    tau_lo = max(t_j[0], t_n[0]) + 20 * _DT
+    tau_hi = min(t_j[-1], t_n[-1], 0.02)
+    tau = np.arange(tau_lo, tau_hi, _DT)
+    amp_j = np.interp(tau, t_j, np.abs(h_j))
+    amp_n = np.interp(tau, t_n, np.abs(h_n))
+    phi_diff = np.interp(tau, t_j, ph_j) - np.interp(tau, t_n, ph_n)
+    phi_diff -= phi_diff[len(phi_diff) // 2]
+
+    assert np.abs(amp_j - amp_n).max() / amp_n.max() < 5e-4
+    assert np.abs(phi_diff).max() < 5e-3
+
+
+def test_nrsur_jax_mode_symmetry(nrsur_mr):
+    """Non-spinning: (2,-2) ~ conj((2,2)), but only to ~3e-4 of peak -- the
+    NRSur7dq4 fits carry small mode asymmetries even at zero spin (measured
+    3.4e-4 on 2026-07). This is why the pipeline blends (2,-2) as its own
+    mode (as the NumPy backend does with lalsim's) instead of conjugating."""
+    modes = nrsur_mr.modes_2pm2(2.226, 60.0, _DT, 1.0, 4096)
+    h22 = np.asarray(modes[(2, 2)])
+    h2m2 = np.asarray(modes[(2, -2)])
+    peak = np.abs(h22).max()
+    assert np.abs(h2m2 - np.conj(h22)).max() < 1e-3 * peak
