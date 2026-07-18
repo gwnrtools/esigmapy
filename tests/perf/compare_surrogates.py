@@ -35,7 +35,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-
 DEFAULT_PARAM_SETS = [
     {
         "M": 10.0,
@@ -68,7 +67,13 @@ def _default_output_dir(ref_commit: str, head_commit: str) -> Path:
     stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
     safe_ref = ref_commit.replace("/", "_")
     safe_head = head_commit.replace("/", "_")
-    return _repo_root() / "tests" / "perf" / "results" / f"esigmapy-surrogate-compare-{safe_ref}-vs-{safe_head}-{stamp}"
+    return (
+        _repo_root()
+        / "tests"
+        / "perf"
+        / "results"
+        / f"esigmapy-surrogate-compare-{safe_ref}-vs-{safe_head}-{stamp}"
+    )
 
 
 def _json_default(value: Any) -> Any:
@@ -84,7 +89,9 @@ def _json_default(value: Any) -> Any:
     raise TypeError(f"Object of type {type(value)!r} is not JSON serializable")
 
 
-def _run(cmd: list[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+def _run(
+    cmd: list[str], *, cwd: Path | None = None
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         cmd,
         cwd=str(cwd) if cwd is not None else None,
@@ -227,12 +234,18 @@ class ScenarioOutputs:
     avg_wall_time_sec: float
 
 
-def _make_worktree(repo_root: Path, label: str, commit: str, parent_dir: Path) -> WorktreeInfo:
-    resolved_commit = _run_git(repo_root, "rev-parse", "--verify", f"{commit}^{{commit}}")
+def _make_worktree(
+    repo_root: Path, label: str, commit: str, parent_dir: Path
+) -> WorktreeInfo:
+    resolved_commit = _run_git(
+        repo_root, "rev-parse", "--verify", f"{commit}^{{commit}}"
+    )
     worktree_root = parent_dir / f"{label}-{resolved_commit[:12]}"
     if worktree_root.exists():
         shutil.rmtree(worktree_root)
-    _run_git(repo_root, "worktree", "add", "--detach", str(worktree_root), resolved_commit)
+    _run_git(
+        repo_root, "worktree", "add", "--detach", str(worktree_root), resolved_commit
+    )
     return WorktreeInfo(
         label=label,
         requested_commit=commit,
@@ -537,7 +550,9 @@ def _comparison_metrics(ref: dict[str, Any], head: dict[str, Any]) -> dict[str, 
 
     ref_time = np.asarray(ref_arrays["time_grid"])
     head_time = np.asarray(head_arrays["time_grid"])
-    time_grid_match = ref_time.shape == head_time.shape and np.array_equal(ref_time, head_time)
+    time_grid_match = ref_time.shape == head_time.shape and np.array_equal(
+        ref_time, head_time
+    )
 
     full_ref = np.asarray(ref_arrays.get("waveform", []))
     full_head = np.asarray(head_arrays.get("waveform", []))
@@ -591,7 +606,9 @@ def _flatten_rows(
             "commit_role": "ref",
             "commit": ref_commit,
             "avg_wall_time_sec": ref_circ_full["avg_wall_time_sec"],
-            "profile_avg_time_sec": profile_avg(ref_payload, "CircularSurrogate.__call__"),
+            "profile_avg_time_sec": profile_avg(
+                ref_payload, "CircularSurrogate.__call__"
+            ),
             "time_grid_match": comparison["time_grid_match"],
             "max_abs_diff": comparison["full_waveform"]["max_abs_diff"],
             "max_rel_diff": comparison["full_waveform"]["max_rel_diff"],
@@ -603,7 +620,9 @@ def _flatten_rows(
             "commit_role": "head",
             "commit": head_commit,
             "avg_wall_time_sec": head_circ_full["avg_wall_time_sec"],
-            "profile_avg_time_sec": profile_avg(head_payload, "CircularSurrogate.__call__"),
+            "profile_avg_time_sec": profile_avg(
+                head_payload, "CircularSurrogate.__call__"
+            ),
             "time_grid_match": comparison["time_grid_match"],
             "max_abs_diff": comparison["full_waveform"]["max_abs_diff"],
             "max_rel_diff": comparison["full_waveform"]["max_rel_diff"],
@@ -615,37 +634,39 @@ def _flatten_rows(
             "commit_role": "ref",
             "commit": ref_commit,
             "avg_wall_time_sec": ref_circ_amp["avg_wall_time_sec"],
-            "profile_avg_time_sec": profile_avg(ref_payload, "CircularSurrogate.__call__"),
+            "profile_avg_time_sec": profile_avg(
+                ref_payload, "CircularSurrogate.__call__"
+            ),
             "time_grid_match": comparison["time_grid_match"],
             "max_abs_diff_amp": comparison["amp"]["max_abs_diff"],
             "max_rel_diff_amp": comparison["amp"]["max_rel_diff"],
-                "max_abs_diff_phase": comparison["phase"]["max_abs_diff"],
-                "max_rel_diff_phase": comparison["phase"]["max_rel_diff"],
-            },
-
-
+            "max_abs_diff_phase": comparison["phase"]["max_abs_diff"],
+            "max_rel_diff_phase": comparison["phase"]["max_rel_diff"],
+        },
         {
             "param_index": param_index,
             "scenario": "circular_amp_phase",
             "commit_role": "head",
             "commit": head_commit,
             "avg_wall_time_sec": head_circ_amp["avg_wall_time_sec"],
-            "profile_avg_time_sec": profile_avg(head_payload, "CircularSurrogate.__call__"),
+            "profile_avg_time_sec": profile_avg(
+                head_payload, "CircularSurrogate.__call__"
+            ),
             "time_grid_match": comparison["time_grid_match"],
             "max_abs_diff_amp": comparison["amp"]["max_abs_diff"],
             "max_rel_diff_amp": comparison["amp"]["max_rel_diff"],
-                "max_abs_diff_phase": comparison["phase"]["max_abs_diff"],
-                "max_rel_diff_phase": comparison["phase"]["max_rel_diff"],
-            },
-
-
+            "max_abs_diff_phase": comparison["phase"]["max_abs_diff"],
+            "max_rel_diff_phase": comparison["phase"]["max_rel_diff"],
+        },
         {
             "param_index": param_index,
             "scenario": "eccentric_full",
             "commit_role": "ref",
             "commit": ref_commit,
             "avg_wall_time_sec": ref_ecc_full["avg_wall_time_sec"],
-            "profile_avg_time_sec": ref_payload["profiling"]["function_totals_sec"]["EccentricSurrogate.__call__"]
+            "profile_avg_time_sec": ref_payload["profiling"]["function_totals_sec"][
+                "EccentricSurrogate.__call__"
+            ]
             / ref_payload["profiling"]["call_counts"]["EccentricSurrogate.__call__"],
             "time_grid_match": comparison["time_grid_match"],
             "max_abs_diff": comparison["full_waveform"]["max_abs_diff"],
@@ -658,7 +679,9 @@ def _flatten_rows(
             "commit_role": "head",
             "commit": head_commit,
             "avg_wall_time_sec": head_ecc_full["avg_wall_time_sec"],
-            "profile_avg_time_sec": head_payload["profiling"]["function_totals_sec"]["EccentricSurrogate.__call__"]
+            "profile_avg_time_sec": head_payload["profiling"]["function_totals_sec"][
+                "EccentricSurrogate.__call__"
+            ]
             / head_payload["profiling"]["call_counts"]["EccentricSurrogate.__call__"],
             "time_grid_match": comparison["time_grid_match"],
             "max_abs_diff": comparison["full_waveform"]["max_abs_diff"],
@@ -771,14 +794,20 @@ def _parent_main(argv: list[str]) -> int:
     repo_root = _repo_root()
     config_path = args.config
     param_sets = _ensure_param_config(config_path)
-    output_dir = _ensure_dir(args.output_dir or _default_output_dir(args.ref_commit, args.head_commit))
+    output_dir = _ensure_dir(
+        args.output_dir or _default_output_dir(args.ref_commit, args.head_commit)
+    )
     worktree_parent = _ensure_dir(output_dir / "worktrees")
     worker_output_root = _ensure_dir(output_dir / "workers")
 
     ref_worktree = head_worktree = None
     try:
-        ref_worktree = _make_worktree(repo_root, "ref", args.ref_commit, worktree_parent)
-        head_worktree = _make_worktree(repo_root, "head", args.head_commit, worktree_parent)
+        ref_worktree = _make_worktree(
+            repo_root, "ref", args.ref_commit, worktree_parent
+        )
+        head_worktree = _make_worktree(
+            repo_root, "head", args.head_commit, worktree_parent
+        )
 
         worker_results: dict[tuple[str, int], Path] = {}
         for commit_info in (ref_worktree, head_worktree):
@@ -847,10 +876,16 @@ def _parent_main(argv: list[str]) -> int:
                 "commit_role": "ref",
                 "commit": ref_worktree.resolved_commit,
                 "avg_wall_time_sec": ref_circ_full["avg_wall_time_sec"],
-                "profile_avg_time_sec": profile_avg(ref_payload, "CircularSurrogate.__call__"),
+                "profile_avg_time_sec": profile_avg(
+                    ref_payload, "CircularSurrogate.__call__"
+                ),
                 "time_grid_match": comparison["circular_full"]["time_grid_match"],
-                "max_abs_diff": comparison["circular_full"]["full_waveform"]["max_abs_diff"],
-                "max_rel_diff": comparison["circular_full"]["full_waveform"]["max_rel_diff"],
+                "max_abs_diff": comparison["circular_full"]["full_waveform"][
+                    "max_abs_diff"
+                ],
+                "max_rel_diff": comparison["circular_full"]["full_waveform"][
+                    "max_rel_diff"
+                ],
                 "mismatch": comparison["circular_full"]["full_waveform"]["mismatch"],
             }
             head_circ_full_row = {
@@ -859,10 +894,16 @@ def _parent_main(argv: list[str]) -> int:
                 "commit_role": "head",
                 "commit": head_worktree.resolved_commit,
                 "avg_wall_time_sec": head_circ_full["avg_wall_time_sec"],
-                "profile_avg_time_sec": profile_avg(head_payload, "CircularSurrogate.__call__"),
+                "profile_avg_time_sec": profile_avg(
+                    head_payload, "CircularSurrogate.__call__"
+                ),
                 "time_grid_match": comparison["circular_full"]["time_grid_match"],
-                "max_abs_diff": comparison["circular_full"]["full_waveform"]["max_abs_diff"],
-                "max_rel_diff": comparison["circular_full"]["full_waveform"]["max_rel_diff"],
+                "max_abs_diff": comparison["circular_full"]["full_waveform"][
+                    "max_abs_diff"
+                ],
+                "max_rel_diff": comparison["circular_full"]["full_waveform"][
+                    "max_rel_diff"
+                ],
                 "mismatch": comparison["circular_full"]["full_waveform"]["mismatch"],
             }
 
@@ -872,12 +913,22 @@ def _parent_main(argv: list[str]) -> int:
                 "commit_role": "ref",
                 "commit": ref_worktree.resolved_commit,
                 "avg_wall_time_sec": ref_circ_amp["avg_wall_time_sec"],
-                "profile_avg_time_sec": profile_avg(ref_payload, "CircularSurrogate.__call__"),
+                "profile_avg_time_sec": profile_avg(
+                    ref_payload, "CircularSurrogate.__call__"
+                ),
                 "time_grid_match": comparison["circular_amp_phase"]["time_grid_match"],
-                "max_abs_diff_amp": comparison["circular_amp_phase"]["amp"]["max_abs_diff"],
-                "max_rel_diff_amp": comparison["circular_amp_phase"]["amp"]["max_rel_diff"],
-                "max_abs_diff_phase": comparison["circular_amp_phase"]["phase"]["max_abs_diff"],
-                "max_rel_diff_phase": comparison["circular_amp_phase"]["phase"]["max_rel_diff"],
+                "max_abs_diff_amp": comparison["circular_amp_phase"]["amp"][
+                    "max_abs_diff"
+                ],
+                "max_rel_diff_amp": comparison["circular_amp_phase"]["amp"][
+                    "max_rel_diff"
+                ],
+                "max_abs_diff_phase": comparison["circular_amp_phase"]["phase"][
+                    "max_abs_diff"
+                ],
+                "max_rel_diff_phase": comparison["circular_amp_phase"]["phase"][
+                    "max_rel_diff"
+                ],
             }
             head_amp_phase_row = {
                 "param_index": index,
@@ -885,12 +936,22 @@ def _parent_main(argv: list[str]) -> int:
                 "commit_role": "head",
                 "commit": head_worktree.resolved_commit,
                 "avg_wall_time_sec": head_circ_amp["avg_wall_time_sec"],
-                "profile_avg_time_sec": profile_avg(head_payload, "CircularSurrogate.__call__"),
+                "profile_avg_time_sec": profile_avg(
+                    head_payload, "CircularSurrogate.__call__"
+                ),
                 "time_grid_match": comparison["circular_amp_phase"]["time_grid_match"],
-                "max_abs_diff_amp": comparison["circular_amp_phase"]["amp"]["max_abs_diff"],
-                "max_rel_diff_amp": comparison["circular_amp_phase"]["amp"]["max_rel_diff"],
-                "max_abs_diff_phase": comparison["circular_amp_phase"]["phase"]["max_abs_diff"],
-                "max_rel_diff_phase": comparison["circular_amp_phase"]["phase"]["max_rel_diff"],
+                "max_abs_diff_amp": comparison["circular_amp_phase"]["amp"][
+                    "max_abs_diff"
+                ],
+                "max_rel_diff_amp": comparison["circular_amp_phase"]["amp"][
+                    "max_rel_diff"
+                ],
+                "max_abs_diff_phase": comparison["circular_amp_phase"]["phase"][
+                    "max_abs_diff"
+                ],
+                "max_rel_diff_phase": comparison["circular_amp_phase"]["phase"][
+                    "max_rel_diff"
+                ],
             }
 
             ref_ecc_full_row = {
@@ -899,10 +960,16 @@ def _parent_main(argv: list[str]) -> int:
                 "commit_role": "ref",
                 "commit": ref_worktree.resolved_commit,
                 "avg_wall_time_sec": ref_ecc_full["avg_wall_time_sec"],
-                "profile_avg_time_sec": profile_avg(ref_payload, "EccentricSurrogate.__call__"),
+                "profile_avg_time_sec": profile_avg(
+                    ref_payload, "EccentricSurrogate.__call__"
+                ),
                 "time_grid_match": comparison["eccentric_full"]["time_grid_match"],
-                "max_abs_diff": comparison["eccentric_full"]["full_waveform"]["max_abs_diff"],
-                "max_rel_diff": comparison["eccentric_full"]["full_waveform"]["max_rel_diff"],
+                "max_abs_diff": comparison["eccentric_full"]["full_waveform"][
+                    "max_abs_diff"
+                ],
+                "max_rel_diff": comparison["eccentric_full"]["full_waveform"][
+                    "max_rel_diff"
+                ],
                 "mismatch": comparison["eccentric_full"]["full_waveform"]["mismatch"],
             }
             head_ecc_full_row = {
@@ -911,10 +978,16 @@ def _parent_main(argv: list[str]) -> int:
                 "commit_role": "head",
                 "commit": head_worktree.resolved_commit,
                 "avg_wall_time_sec": head_ecc_full["avg_wall_time_sec"],
-                "profile_avg_time_sec": profile_avg(head_payload, "EccentricSurrogate.__call__"),
+                "profile_avg_time_sec": profile_avg(
+                    head_payload, "EccentricSurrogate.__call__"
+                ),
                 "time_grid_match": comparison["eccentric_full"]["time_grid_match"],
-                "max_abs_diff": comparison["eccentric_full"]["full_waveform"]["max_abs_diff"],
-                "max_rel_diff": comparison["eccentric_full"]["full_waveform"]["max_rel_diff"],
+                "max_abs_diff": comparison["eccentric_full"]["full_waveform"][
+                    "max_abs_diff"
+                ],
+                "max_rel_diff": comparison["eccentric_full"]["full_waveform"][
+                    "max_rel_diff"
+                ],
                 "mismatch": comparison["eccentric_full"]["full_waveform"]["mismatch"],
             }
 
@@ -933,28 +1006,48 @@ def _parent_main(argv: list[str]) -> int:
                         "commit": f"{ref_worktree.resolved_commit}..{head_worktree.resolved_commit}",
                         "ref_avg_wall_time_sec": ref_circ_full["avg_wall_time_sec"],
                         "head_avg_wall_time_sec": head_circ_full["avg_wall_time_sec"],
-                        "wall_delta_sec": head_circ_full["avg_wall_time_sec"] - ref_circ_full["avg_wall_time_sec"],
+                        "wall_delta_sec": head_circ_full["avg_wall_time_sec"]
+                        - ref_circ_full["avg_wall_time_sec"],
                         "wall_delta_pct": (
-                            (head_circ_full["avg_wall_time_sec"] - ref_circ_full["avg_wall_time_sec"])
+                            (
+                                head_circ_full["avg_wall_time_sec"]
+                                - ref_circ_full["avg_wall_time_sec"]
+                            )
                             / ref_circ_full["avg_wall_time_sec"]
                             if ref_circ_full["avg_wall_time_sec"]
                             else float("nan")
                         ),
-                        "ref_profile_avg_time_sec": profile_avg(ref_payload, "CircularSurrogate.__call__"),
-                        "head_profile_avg_time_sec": profile_avg(head_payload, "CircularSurrogate.__call__"),
-                        "profile_delta_sec": profile_avg(head_payload, "CircularSurrogate.__call__")
+                        "ref_profile_avg_time_sec": profile_avg(
+                            ref_payload, "CircularSurrogate.__call__"
+                        ),
+                        "head_profile_avg_time_sec": profile_avg(
+                            head_payload, "CircularSurrogate.__call__"
+                        ),
+                        "profile_delta_sec": profile_avg(
+                            head_payload, "CircularSurrogate.__call__"
+                        )
                         - profile_avg(ref_payload, "CircularSurrogate.__call__"),
                         "profile_delta_pct": (
-                            (profile_avg(head_payload, "CircularSurrogate.__call__")
-                             - profile_avg(ref_payload, "CircularSurrogate.__call__"))
+                            (
+                                profile_avg(head_payload, "CircularSurrogate.__call__")
+                                - profile_avg(ref_payload, "CircularSurrogate.__call__")
+                            )
                             / profile_avg(ref_payload, "CircularSurrogate.__call__")
                             if profile_avg(ref_payload, "CircularSurrogate.__call__")
                             else float("nan")
                         ),
-                        "time_grid_match": comparison["circular_full"]["time_grid_match"],
-                        "max_abs_diff": comparison["circular_full"]["full_waveform"]["max_abs_diff"],
-                        "max_rel_diff": comparison["circular_full"]["full_waveform"]["max_rel_diff"],
-                        "mismatch": comparison["circular_full"]["full_waveform"]["mismatch"],
+                        "time_grid_match": comparison["circular_full"][
+                            "time_grid_match"
+                        ],
+                        "max_abs_diff": comparison["circular_full"]["full_waveform"][
+                            "max_abs_diff"
+                        ],
+                        "max_rel_diff": comparison["circular_full"]["full_waveform"][
+                            "max_rel_diff"
+                        ],
+                        "mismatch": comparison["circular_full"]["full_waveform"][
+                            "mismatch"
+                        ],
                     },
                     {
                         "param_index": index,
@@ -963,34 +1056,52 @@ def _parent_main(argv: list[str]) -> int:
                         "commit": f"{ref_worktree.resolved_commit}..{head_worktree.resolved_commit}",
                         "ref_avg_wall_time_sec": ref_circ_amp["avg_wall_time_sec"],
                         "head_avg_wall_time_sec": head_circ_amp["avg_wall_time_sec"],
-                        "wall_delta_sec": head_circ_amp["avg_wall_time_sec"] - ref_circ_amp["avg_wall_time_sec"],
+                        "wall_delta_sec": head_circ_amp["avg_wall_time_sec"]
+                        - ref_circ_amp["avg_wall_time_sec"],
                         "wall_delta_pct": (
-                            (head_circ_amp["avg_wall_time_sec"] - ref_circ_amp["avg_wall_time_sec"])
+                            (
+                                head_circ_amp["avg_wall_time_sec"]
+                                - ref_circ_amp["avg_wall_time_sec"]
+                            )
                             / ref_circ_amp["avg_wall_time_sec"]
                             if ref_circ_amp["avg_wall_time_sec"]
                             else float("nan")
                         ),
-                        "ref_profile_avg_time_sec": profile_avg(ref_payload, "CircularSurrogate.__call__"),
-                        "head_profile_avg_time_sec": profile_avg(head_payload, "CircularSurrogate.__call__"),
-                        "profile_delta_sec": profile_avg(head_payload, "CircularSurrogate.__call__")
+                        "ref_profile_avg_time_sec": profile_avg(
+                            ref_payload, "CircularSurrogate.__call__"
+                        ),
+                        "head_profile_avg_time_sec": profile_avg(
+                            head_payload, "CircularSurrogate.__call__"
+                        ),
+                        "profile_delta_sec": profile_avg(
+                            head_payload, "CircularSurrogate.__call__"
+                        )
                         - profile_avg(ref_payload, "CircularSurrogate.__call__"),
                         "profile_delta_pct": (
-                            (profile_avg(head_payload, "CircularSurrogate.__call__")
-                             - profile_avg(ref_payload, "CircularSurrogate.__call__"))
+                            (
+                                profile_avg(head_payload, "CircularSurrogate.__call__")
+                                - profile_avg(ref_payload, "CircularSurrogate.__call__")
+                            )
                             / profile_avg(ref_payload, "CircularSurrogate.__call__")
                             if profile_avg(ref_payload, "CircularSurrogate.__call__")
                             else float("nan")
                         ),
-                        "time_grid_match": comparison["circular_amp_phase"]["time_grid_match"],
-                        "max_abs_diff_amp": comparison["circular_amp_phase"]["amp"]["max_abs_diff"],
-                        "max_rel_diff_amp": comparison["circular_amp_phase"]["amp"]["max_rel_diff"],
-                    "max_abs_diff_phase": comparison["circular_amp_phase"]["phase"]["max_abs_diff"],
-                    "max_rel_diff_phase": comparison["circular_amp_phase"]["phase"]["max_rel_diff"],
-                },
-
-
-
-
+                        "time_grid_match": comparison["circular_amp_phase"][
+                            "time_grid_match"
+                        ],
+                        "max_abs_diff_amp": comparison["circular_amp_phase"]["amp"][
+                            "max_abs_diff"
+                        ],
+                        "max_rel_diff_amp": comparison["circular_amp_phase"]["amp"][
+                            "max_rel_diff"
+                        ],
+                        "max_abs_diff_phase": comparison["circular_amp_phase"]["phase"][
+                            "max_abs_diff"
+                        ],
+                        "max_rel_diff_phase": comparison["circular_amp_phase"]["phase"][
+                            "max_rel_diff"
+                        ],
+                    },
                     {
                         "param_index": index,
                         "scenario": "eccentric_full",
@@ -998,28 +1109,50 @@ def _parent_main(argv: list[str]) -> int:
                         "commit": f"{ref_worktree.resolved_commit}..{head_worktree.resolved_commit}",
                         "ref_avg_wall_time_sec": ref_ecc_full["avg_wall_time_sec"],
                         "head_avg_wall_time_sec": head_ecc_full["avg_wall_time_sec"],
-                        "wall_delta_sec": head_ecc_full["avg_wall_time_sec"] - ref_ecc_full["avg_wall_time_sec"],
+                        "wall_delta_sec": head_ecc_full["avg_wall_time_sec"]
+                        - ref_ecc_full["avg_wall_time_sec"],
                         "wall_delta_pct": (
-                            (head_ecc_full["avg_wall_time_sec"] - ref_ecc_full["avg_wall_time_sec"])
+                            (
+                                head_ecc_full["avg_wall_time_sec"]
+                                - ref_ecc_full["avg_wall_time_sec"]
+                            )
                             / ref_ecc_full["avg_wall_time_sec"]
                             if ref_ecc_full["avg_wall_time_sec"]
                             else float("nan")
                         ),
-                        "ref_profile_avg_time_sec": profile_avg(ref_payload, "EccentricSurrogate.__call__"),
-                        "head_profile_avg_time_sec": profile_avg(head_payload, "EccentricSurrogate.__call__"),
-                        "profile_delta_sec": profile_avg(head_payload, "EccentricSurrogate.__call__")
+                        "ref_profile_avg_time_sec": profile_avg(
+                            ref_payload, "EccentricSurrogate.__call__"
+                        ),
+                        "head_profile_avg_time_sec": profile_avg(
+                            head_payload, "EccentricSurrogate.__call__"
+                        ),
+                        "profile_delta_sec": profile_avg(
+                            head_payload, "EccentricSurrogate.__call__"
+                        )
                         - profile_avg(ref_payload, "EccentricSurrogate.__call__"),
                         "profile_delta_pct": (
-                            (profile_avg(head_payload, "EccentricSurrogate.__call__")
-                             - profile_avg(ref_payload, "EccentricSurrogate.__call__"))
+                            (
+                                profile_avg(head_payload, "EccentricSurrogate.__call__")
+                                - profile_avg(
+                                    ref_payload, "EccentricSurrogate.__call__"
+                                )
+                            )
                             / profile_avg(ref_payload, "EccentricSurrogate.__call__")
                             if profile_avg(ref_payload, "EccentricSurrogate.__call__")
                             else float("nan")
                         ),
-                        "time_grid_match": comparison["eccentric_full"]["time_grid_match"],
-                        "max_abs_diff": comparison["eccentric_full"]["full_waveform"]["max_abs_diff"],
-                        "max_rel_diff": comparison["eccentric_full"]["full_waveform"]["max_rel_diff"],
-                        "mismatch": comparison["eccentric_full"]["full_waveform"]["mismatch"],
+                        "time_grid_match": comparison["eccentric_full"][
+                            "time_grid_match"
+                        ],
+                        "max_abs_diff": comparison["eccentric_full"]["full_waveform"][
+                            "max_abs_diff"
+                        ],
+                        "max_rel_diff": comparison["eccentric_full"]["full_waveform"][
+                            "max_rel_diff"
+                        ],
+                        "mismatch": comparison["eccentric_full"]["full_waveform"][
+                            "mismatch"
+                        ],
                     },
                 ]
             )

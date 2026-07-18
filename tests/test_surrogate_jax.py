@@ -223,7 +223,11 @@ def test_parameter_space_evaluator_matches_call(ecc_jax, q, e_ref, l_ref):
     t_grid, fn = ecc_jax.parameter_space_evaluator(**kw)
     fn = jax.jit(fn)
 
-    tn, hn = ecc_jax(M=10.0, params=(q, e_ref, l_ref), **{k: kw[k] for k in ("delta_t", "t_start", "t_end")})
+    tn, hn = ecc_jax(
+        M=10.0,
+        params=(q, e_ref, l_ref),
+        **{k: kw[k] for k in ("delta_t", "t_start", "t_end")},
+    )
     h = np.asarray(fn(q, e_ref, l_ref))
     assert np.array_equal(t_grid, tn)
     assert _rel(h, hn).max() < _WF_RTOL
@@ -332,8 +336,11 @@ def test_traced_mass_evaluator_vmap_varying_mass_and_duration(ecc_np, ecc_jax):
 
     h_b = np.asarray(
         jax.jit(jax.vmap(fn))(
-            jnp.asarray(qs), jnp.asarray(es), jnp.asarray(ls),
-            jnp.asarray(Ms), jnp.asarray(starts),
+            jnp.asarray(qs),
+            jnp.asarray(es),
+            jnp.asarray(ls),
+            jnp.asarray(Ms),
+            jnp.asarray(starts),
         )
     )
     fn_j = jax.jit(fn)
@@ -375,7 +382,7 @@ def test_traced_mass_evaluator_grad(ecc_jax):
     # energy(M) is piecewise smooth in M (interpolation-cell crossings), so the
     # FD cross-check for the mass direction uses a looser tolerance
     eps_M = 1e-6
-    fd_M = (energy(2.3, 0.3, 1.3, 12.0 + eps_M) - energy(2.3, 0.3, 1.3, 12.0 - eps_M)) / (
-        2 * eps_M
-    )
+    fd_M = (
+        energy(2.3, 0.3, 1.3, 12.0 + eps_M) - energy(2.3, 0.3, 1.3, 12.0 - eps_M)
+    ) / (2 * eps_M)
     assert abs(float(g_M) - float(fd_M)) / abs(float(fd_M)) < 1e-3

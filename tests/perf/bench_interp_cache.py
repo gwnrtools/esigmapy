@@ -30,7 +30,6 @@ import time
 import numpy as np
 from numba import njit
 
-
 # --- cache construction (the one-time cost) ---------------------------------
 
 
@@ -170,8 +169,20 @@ def circ_mode_branchless(g0, dg, amp_table, phase_table, q0, dq, n_out, amp_scal
 
 @njit(fastmath=True, cache=True)
 def ecc_mode_current(
-    tg0, tdg, lt_relation, q0, dq, n_out, lg0, ldg, damp, dphase, rcp,
-    amp0, phase0, amp_scale,
+    tg0,
+    tdg,
+    lt_relation,
+    q0,
+    dq,
+    n_out,
+    lg0,
+    ldg,
+    damp,
+    dphase,
+    rcp,
+    amp0,
+    phase0,
+    amp_scale,
 ):
     last_t = lt_relation.shape[0] - 1
     inv_tdg = 1.0 / tdg
@@ -211,8 +222,18 @@ def ecc_mode_current(
 
 @njit(fastmath=True, cache=True)
 def ecc_mode_cached_t(
-    t_idx, t_w, lt_relation, n_out, lg0, ldg, damp, dphase, rcp,
-    amp0, phase0, amp_scale,
+    t_idx,
+    t_w,
+    lt_relation,
+    n_out,
+    lg0,
+    ldg,
+    damp,
+    dphase,
+    rcp,
+    amp0,
+    phase0,
+    amp_scale,
 ):
     last_l = damp.shape[0] - 1
     inv_ldg = 1.0 / ldg
@@ -244,8 +265,20 @@ def ecc_mode_cached_t(
 
 @njit(fastmath=True, cache=True)
 def ecc_mode_branchless(
-    tg0, tdg, lt_relation, q0, dq, n_out, lg0, ldg, damp, dphase, rcp,
-    amp0, phase0, amp_scale,
+    tg0,
+    tdg,
+    lt_relation,
+    q0,
+    dq,
+    n_out,
+    lg0,
+    ldg,
+    damp,
+    dphase,
+    rcp,
+    amp0,
+    phase0,
+    amp_scale,
 ):
     last_t = lt_relation.shape[0] - 1
     inv_tdg = 1.0 / tdg
@@ -310,54 +343,182 @@ def run_case(name, n_out, n_tab_t, n_tab_l, reps):
     a = interp_current(tg0, tdg, amp_table, q0, dq, n_out)
     b = interp_cached(idx, w, amp_table, n_out)
     c = interp_branchless(tg0, tdg, amp_table, q0, dq, n_out)
-    rows.append(("interp-only current   ", _time(
-        lambda: interp_current(tg0, tdg, amp_table, q0, dq, n_out), reps), None))
-    rows.append(("interp-only cached    ", _time(
-        lambda: interp_cached(idx, w, amp_table, n_out), reps), _max_abs(a, b)))
-    rows.append(("interp-only branchless", _time(
-        lambda: interp_branchless(tg0, tdg, amp_table, q0, dq, n_out), reps),
-        _max_abs(a, c)))
+    rows.append(
+        (
+            "interp-only current   ",
+            _time(lambda: interp_current(tg0, tdg, amp_table, q0, dq, n_out), reps),
+            None,
+        )
+    )
+    rows.append(
+        (
+            "interp-only cached    ",
+            _time(lambda: interp_cached(idx, w, amp_table, n_out), reps),
+            _max_abs(a, b),
+        )
+    )
+    rows.append(
+        (
+            "interp-only branchless",
+            _time(lambda: interp_branchless(tg0, tdg, amp_table, q0, dq, n_out), reps),
+            _max_abs(a, c),
+        )
+    )
 
     a = circ_mode_current(tg0, tdg, amp_table, phase_table, q0, dq, n_out, amp_scale)
     b = circ_mode_cached(idx, w, amp_table, phase_table, n_out, amp_scale)
-    c = circ_mode_branchless(
-        tg0, tdg, amp_table, phase_table, q0, dq, n_out, amp_scale)
-    rows.append(("circ fused  current   ", _time(
-        lambda: circ_mode_current(
-            tg0, tdg, amp_table, phase_table, q0, dq, n_out, amp_scale), reps), None))
-    rows.append(("circ fused  cached    ", _time(
-        lambda: circ_mode_cached(
-            idx, w, amp_table, phase_table, n_out, amp_scale), reps), _max_abs(a, b)))
-    rows.append(("circ fused  branchless", _time(
-        lambda: circ_mode_branchless(
-            tg0, tdg, amp_table, phase_table, q0, dq, n_out, amp_scale), reps),
-        _max_abs(a, c)))
+    c = circ_mode_branchless(tg0, tdg, amp_table, phase_table, q0, dq, n_out, amp_scale)
+    rows.append(
+        (
+            "circ fused  current   ",
+            _time(
+                lambda: circ_mode_current(
+                    tg0, tdg, amp_table, phase_table, q0, dq, n_out, amp_scale
+                ),
+                reps,
+            ),
+            None,
+        )
+    )
+    rows.append(
+        (
+            "circ fused  cached    ",
+            _time(
+                lambda: circ_mode_cached(
+                    idx, w, amp_table, phase_table, n_out, amp_scale
+                ),
+                reps,
+            ),
+            _max_abs(a, b),
+        )
+    )
+    rows.append(
+        (
+            "circ fused  branchless",
+            _time(
+                lambda: circ_mode_branchless(
+                    tg0, tdg, amp_table, phase_table, q0, dq, n_out, amp_scale
+                ),
+                reps,
+            ),
+            _max_abs(a, c),
+        )
+    )
 
     a = ecc_mode_current(
-        tg0, tdg, lt_relation, q0, dq, n_out, lg0, ldg, damp, dphase, rcp,
-        amp0, phase0, amp_scale)
+        tg0,
+        tdg,
+        lt_relation,
+        q0,
+        dq,
+        n_out,
+        lg0,
+        ldg,
+        damp,
+        dphase,
+        rcp,
+        amp0,
+        phase0,
+        amp_scale,
+    )
     b = ecc_mode_cached_t(
-        idx, w, lt_relation, n_out, lg0, ldg, damp, dphase, rcp,
-        amp0, phase0, amp_scale)
+        idx, w, lt_relation, n_out, lg0, ldg, damp, dphase, rcp, amp0, phase0, amp_scale
+    )
     c = ecc_mode_branchless(
-        tg0, tdg, lt_relation, q0, dq, n_out, lg0, ldg, damp, dphase, rcp,
-        amp0, phase0, amp_scale)
-    rows.append(("ecc fused   current   ", _time(
-        lambda: ecc_mode_current(
-            tg0, tdg, lt_relation, q0, dq, n_out, lg0, ldg, damp, dphase, rcp,
-            amp0, phase0, amp_scale), reps), None))
-    rows.append(("ecc fused   cached    ", _time(
-        lambda: ecc_mode_cached_t(
-            idx, w, lt_relation, n_out, lg0, ldg, damp, dphase, rcp,
-            amp0, phase0, amp_scale), reps), _max_abs(a, b)))
-    rows.append(("ecc fused   branchless", _time(
-        lambda: ecc_mode_branchless(
-            tg0, tdg, lt_relation, q0, dq, n_out, lg0, ldg, damp, dphase, rcp,
-            amp0, phase0, amp_scale), reps), _max_abs(a, c)))
+        tg0,
+        tdg,
+        lt_relation,
+        q0,
+        dq,
+        n_out,
+        lg0,
+        ldg,
+        damp,
+        dphase,
+        rcp,
+        amp0,
+        phase0,
+        amp_scale,
+    )
+    rows.append(
+        (
+            "ecc fused   current   ",
+            _time(
+                lambda: ecc_mode_current(
+                    tg0,
+                    tdg,
+                    lt_relation,
+                    q0,
+                    dq,
+                    n_out,
+                    lg0,
+                    ldg,
+                    damp,
+                    dphase,
+                    rcp,
+                    amp0,
+                    phase0,
+                    amp_scale,
+                ),
+                reps,
+            ),
+            None,
+        )
+    )
+    rows.append(
+        (
+            "ecc fused   cached    ",
+            _time(
+                lambda: ecc_mode_cached_t(
+                    idx,
+                    w,
+                    lt_relation,
+                    n_out,
+                    lg0,
+                    ldg,
+                    damp,
+                    dphase,
+                    rcp,
+                    amp0,
+                    phase0,
+                    amp_scale,
+                ),
+                reps,
+            ),
+            _max_abs(a, b),
+        )
+    )
+    rows.append(
+        (
+            "ecc fused   branchless",
+            _time(
+                lambda: ecc_mode_branchless(
+                    tg0,
+                    tdg,
+                    lt_relation,
+                    q0,
+                    dq,
+                    n_out,
+                    lg0,
+                    ldg,
+                    damp,
+                    dphase,
+                    rcp,
+                    amp0,
+                    phase0,
+                    amp_scale,
+                ),
+                reps,
+            ),
+            _max_abs(a, c),
+        )
+    )
 
     print(f"\n{name}: n_out={n_out}, n_tab_t={n_tab_t}, n_tab_l={n_tab_l}, reps={reps}")
-    print(f"  cache build (one-time): {t_build*1e3:9.4f} ms, "
-          f"size {(idx.nbytes + w.nbytes)/1e6:.1f} MB")
+    print(
+        f"  cache build (one-time): {t_build*1e3:9.4f} ms, "
+        f"size {(idx.nbytes + w.nbytes)/1e6:.1f} MB"
+    )
     for label, sec, diff in rows:
         extra = "" if diff is None else f"  max_abs_diff={diff:.3e}"
         print(f"  {label}: {sec*1e3:9.4f} ms{extra}")
@@ -372,10 +533,20 @@ def main():
     run_case("short", n_out=4_097, n_tab_t=9_000, n_tab_l=1_000, reps=args.reps_small)
     # long-inspiral regime (t_start=-136.0 at M=10, 4096 Hz); table sizes match
     # the circular (1.21M) / eccentric (277k) native t grids and l grid (125k)
-    run_case("long-circ", n_out=557_057, n_tab_t=1_214_525, n_tab_l=125_000,
-             reps=args.reps_large)
-    run_case("long-ecc", n_out=557_057, n_tab_t=277_000, n_tab_l=125_000,
-             reps=args.reps_large)
+    run_case(
+        "long-circ",
+        n_out=557_057,
+        n_tab_t=1_214_525,
+        n_tab_l=125_000,
+        reps=args.reps_large,
+    )
+    run_case(
+        "long-ecc",
+        n_out=557_057,
+        n_tab_t=277_000,
+        n_tab_l=125_000,
+        reps=args.reps_large,
+    )
     return 0
 
 

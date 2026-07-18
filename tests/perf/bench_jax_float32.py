@@ -86,7 +86,9 @@ def run(precision, out_path, do_time):
             )
             single = jax.jit(fn_m)
             batched = jax.jit(jax.vmap(fn_m))
-            qb, eb, lb = (jnp.asarray(a[:1].repeat(BATCH)) for a in (q_arr, e_arr, l_arr))
+            qb, eb, lb = (
+                jnp.asarray(a[:1].repeat(BATCH)) for a in (q_arr, e_arr, l_arr)
+            )
             jax.block_until_ready(single(q_arr[0], e_arr[0], l_arr[0]))
             jax.block_until_ready(batched(qb, eb, lb))
             reps = 50 if case == "short" else 10
