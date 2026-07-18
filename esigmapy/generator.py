@@ -578,11 +578,16 @@ def _get_transition_frequency_window(
                 num_hyb_orbits * np.pi,
                 direction="backward",
             )
-            window_end_idx = transition_idx + _get_window_start(
+            window_end_offset = _get_window_start(
                 orbital_freq[transition_idx:],
                 delta_t,
                 num_hyb_orbits * np.pi,
                 direction="forward",
+            )
+            window_end_idx = (
+                transition_idx + window_end_offset
+                if window_end_offset is not None
+                else None
             )
             # FAILSAFE mode behavior
             if window_start_idx is None:
