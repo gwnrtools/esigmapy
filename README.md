@@ -97,7 +97,7 @@ The instructions to generate `ESIGMAHM` waveforms and the various functionalitie
 
   **Note:** `ESIGMASur` currently supports Python <= 3.12, owing to a compatibility restriction in [`tpi-splines`](https://github.com/mpuerrer/TPI), a dependency of `ESIGMASur`.
     
-* Download the surrogate data files of `ESIGMASur`, which can be found [on the repo](https://github.com/gwnrtools/esigmapy/tree/master/esigmapy/surrogate/data). Next, set the shell environment variable `ESIGMASUR_DATA_PATH` to the directory where you keep these surrogate data files by running: `export ESIGMASUR_DATA_PATH="/path/to/ESIGMASur"`.
+* Download the surrogate data files of `ESIGMASur`, which can be found [on the repo](https://github.com/gwnrtools/esigmapy/tree/master/esigmapy/surrogate/data) or [on its Zenodo archive](https://doi.org/10.5281/zenodo.20592020). Next, set the shell environment variable `ESIGMASUR_DATA_PATH` to the directory where you keep these surrogate data files by running: `export ESIGMASUR_DATA_PATH="/path/to/ESIGMASur"`.
 
 * Using the inspiral-only surrogate `InspiralESIGMASur` would not require any further dependencies. However, its hybridized IMR version `IMRESIGMASur` will require downloading the NR surrogate data file ([installation instructions above](https://github.com/gwnrtools/esigmapy/tree/master#installing-nrsur7dq4)). Or, if you want to use `SEOBNRv5HM` or `SEOBNRv5PHM` as the merger-ringdown piece in `IMRESIGMASur`, add `pyseobnr` option during the installation: `pip install "esigmapy[surrogate,pyseobnr] @ git+https://github.com/gwnrtools/esigmapy.git"`.
 
@@ -108,7 +108,7 @@ The usage instructions and the various functionalities of `ESIGMASur` are detail
 ## 📖 Citation
 * If you use `ESIGMAHM` in your work, please cite:
   
-  Paul et al., _"ESIGMAHM: An Eccentric, Spinning inspiral-merger-ringdown waveform model with Higher Modes for the detection and characterization of binary black holes"_, [PhysRevD.111.084074](https://journals.aps.org/prd/abstract/10.1103/PhysRevD.111.084074), arXiv:[2409.13866](https://arxiv.org/abs/2409.13866) (2024)
+  Paul et al., _"ESIGMAHM: An Eccentric, Spinning inspiral-merger-ringdown waveform model with Higher Modes for the detection and characterization of binary black holes"_, [Phys. Rev. D 111, 084074](https://journals.aps.org/prd/abstract/10.1103/PhysRevD.111.084074), arXiv:[2409.13866](https://arxiv.org/abs/2409.13866) (2024)
 
   ```bibtex
   @article{Paul:2024ujx,
@@ -129,18 +129,22 @@ The usage instructions and the various functionalities of `ESIGMASur` are detail
 
 * If you use `ESIGMASur` in your work, please cite:
 
-  Maurya et al., _"Chase Orbits, not Time: A Scalable Paradigm for Long-Duration Eccentric Gravitational-Wave Surrogates"_, arXiv:[2510.00116](https://arxiv.org/abs/2510.00116) (2025)
+  Maurya et al., _"Chase Orbits, not Time: A Scalable Paradigm for Long-Duration Eccentric Gravitational-Wave Surrogates"_, [Phys. Rev. Lett. 137, 041401](https://doi.org/10.1103/1thz-h7zt), arXiv:[2510.00116](https://arxiv.org/abs/2510.00116) (2025)
 
   ```bibtex
   @article{Maurya:2025shc,
-      author = "Maurya, Akash and Kumar, Prayush and Field, Scott E. and Mishra, Chandra Kant and Nee, Peter James and Paul, Kaushik and Pfeiffer, Harald P. and Ravichandran, Adhrit and Varma, Vijay",
-      title = "{Chase Orbits, not Time: A Scalable Paradigm for Long-Duration Eccentric Gravitational-Wave Surrogates}",
-      eprint = "2510.00116",
-      archivePrefix = "arXiv",
-      primaryClass = "gr-qc",
-      journal = {},
-      month = "9",
-      year = "2025",
+    author = "Maurya, Akash and Kumar, Prayush and Field, Scott E. and Mishra, Chandra Kant and Nee, Peter James and Paul, Kaushik and Pfeiffer, Harald P. and Ravichandran, Adhrit and Varma, Vijay",
+    title = "{Chase Orbits, not Time: A Scalable Paradigm for Long-Duration Eccentric Gravitational-Wave Surrogates}",
+    eprint = "2510.00116",
+    archivePrefix = "arXiv",
+    primaryClass = "gr-qc",
+    reportNumber = "LIGO-P2500585",
+    doi = "10.1103/1thz-h7zt",
+    journal = "Phys. Rev. Lett.",
+    volume = "137",
+    number = "4",
+    pages = "041401",
+    year = "2026"
   }
   ```
 
