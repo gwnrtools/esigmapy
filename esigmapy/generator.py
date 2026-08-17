@@ -44,7 +44,7 @@ def eccentricity_at_extremum_frequency(
     retval = ls.SimInspiralESIGMADynamics(
         mass1, mass2, spin1z, spin2z, e0, f_lower, l0, 1e-12, sample_rate
     )
-    t, x, e, l, phi, phidot, r, rdot = retval[:8]
+    t, x, e, l, u, phi, phidot, r, rdot = retval[:9]
     t.data.data *= lal.MTSUN_SI
 
     if verbose:
@@ -130,7 +130,7 @@ def eccentricity_at_reference_frequency(
         1e-12,
         sample_rate,
     )
-    t, x, e, l, phi, phidot, r, rdot = retval[:8]
+    t, x, e, l, u, phi, phidot, r, rdot = retval[:9]
     t.data.data *= lal.MTSUN_SI
 
     if verbose:
@@ -202,7 +202,7 @@ def get_inspiral_esigma_modes(
         return_orbital_params   -- If True, returns the orbital evolution of all the orbital elements.
                                    Can also be a list of orbital variable names to return only those
                                    specific variables. Available orbital variables are:
-                                   ['x', 'e', 'l', 'phi', 'phidot', 'r', 'rdot']
+                                   ['x', 'e', 'l', 'u', 'phi', 'phidot', 'r', 'rdot']
         return_pycbc_timeseries -- If True, returns data in the form of PyCBC timeseries.
                                    True by default.
         verbose                 -- Verbosity flag
@@ -217,7 +217,7 @@ def get_inspiral_esigma_modes(
     """
 
     if return_orbital_params:
-        all_orbital_var_names = ["x", "e", "l", "phi", "phidot", "r", "rdot"]
+        all_orbital_var_names = ["x", "e", "l", "u", "phi", "phidot", "r", "rdot"]
         if return_orbital_params != True:
             for name in return_orbital_params:
                 if name not in all_orbital_var_names:
@@ -248,7 +248,7 @@ def get_inspiral_esigma_modes(
             1e-12,
             1 / delta_t,
         )
-        t, x, e, l, phi, phidot, r, rdot = retval[:8]
+        t, x, e, l, u, phi, phidot, r, rdot = retval[:9]
         eccentricity = e.data.data[-1]
         mean_anomaly = l.data.data[-1]
         f_start = f_lower
@@ -274,10 +274,10 @@ def get_inspiral_esigma_modes(
             f_lower,
         )
         new_len = len(retval[0].data.data) - ref_idx
-        for ii in range(8):
+        for ii in range(9):
             lal.ResizeREAL8TimeSeries(retval[ii], ref_idx, new_len)
 
-    t, x, e, l, phi, phidot, r, rdot = retval[:8]
+    t, x, e, l, u, phi, phidot, r, rdot = retval[:9]
     t.data.data *= (
         mass1 + mass2
     ) * lal.MTSUN_SI  # Time from geometrized units to seconds
@@ -390,7 +390,7 @@ def get_inspiral_esigma_waveform(
         return_orbital_params   -- If True, returns the orbital evolution of all the orbital elements (in
                                    geometrized units). Can also be a list of orbital variable names to return
                                    only those specific variables. Available orbital variables names are:
-                                   ['x', 'e', 'l', 'phi', 'phidot', 'r', 'rdot']
+                                   ['x', 'e', 'l', 'u', 'phi', 'phidot', 'r', 'rdot']
         return_pycbc_timeseries -- If True, returns data in the form of PyCBC timeseries.
                                    True by default
         verbose                 -- Verbosity level. Available values are: 0, 1, 2
@@ -766,7 +766,7 @@ def get_imr_esigma_modes(
                                      orbital variable names to return
                                      only those specific variables. Available
                                      orbital variables names are:
-                                  ['x', 'e', 'l', 'phi', 'phidot', 'r', 'rdot'].
+                                  ['x', 'e', 'l', 'u', 'phi', 'phidot', 'r', 'rdot'].
                                      Note that these are available only for the
                                      inspiral portion of the waveform!
         failsafe                  -- If True, we make reasonable choices for the
@@ -800,7 +800,16 @@ def get_imr_esigma_modes(
     if coa_phase is None:
         coa_phase = 0
 
-    available_inspiral_orbital_params = ["x", "e", "l", "phi", "phidot", "r", "rdot"]
+    available_inspiral_orbital_params = [
+        "x",
+        "e",
+        "l",
+        "u",
+        "phi",
+        "phidot",
+        "r",
+        "rdot",
+    ]
     if return_orbital_params == True:
         return_orbital_params = available_inspiral_orbital_params
         return_orbital_params_user = set(return_orbital_params)
@@ -1148,7 +1157,7 @@ def get_imr_esigma_waveform(
                                      orbital variable names to return
                                      only those specific variables. Available
                                      orbital variables names are:
-                                  ['x', 'e', 'l', 'phi', 'phidot', 'r', 'rdot'].
+                                  ['x', 'e', 'l', 'u', 'phi', 'phidot', 'r', 'rdot'].
                                      Note that these are available only for the
                                      inspiral portion of the waveform!
         failsafe                  -- If True, we make reasonable choices for the
