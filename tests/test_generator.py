@@ -35,13 +35,14 @@ def _lal_mode(n, freq_hz=50.0, dt=1.0 / 4096):
 
 
 def _fake_dynamics(n=64, dt=1.0 / 4096):
-    """Return a tuple of 8 mock LAL time series mimicking SimInspiralESIGMADynamics output."""
+    """Return a tuple of 9 mock LAL time series mimicking SimInspiralESIGMADynamics output."""
     t_arr = np.arange(n, dtype=float) * dt
     return (
         _lal_ts(t_arr.copy()),  # t  (copied so in-place *= doesn't affect original)
         _lal_ts(np.ones(n) * 0.1),  # x
         _lal_ts(np.zeros(n)),  # e
         _lal_ts(np.zeros(n)),  # l
+        _lal_ts(np.zeros(n)),  # u
         _lal_ts(np.linspace(0, 5, n)),  # phi
         _lal_ts(np.ones(n) * 100.0),  # phidot
         _lal_ts(np.ones(n) * 10.0),  # r
@@ -334,6 +335,7 @@ class TestEccentricityAtReferenceFrequencyWithMock:
             _lal_ts(np.arange(n, dtype=float) * dt),
             _lal_ts(x_arr),
             _lal_ts(e_arr),
+            _lal_ts(np.zeros(n)),
             _lal_ts(np.zeros(n)),
             _lal_ts(np.zeros(n)),
             _lal_ts(np.ones(n) * 100.0),
