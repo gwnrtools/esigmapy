@@ -23,6 +23,7 @@ Then to use:
 Usage instructions:
  * `ESIGMAHM` [tutorial notebook](https://github.com/gwnrtools/esigmapy/blob/master/notebooks/ESIGMA_tutorial.ipynb)
  * `ESIGMASur` [tutorial notebook](https://github.com/gwnrtools/esigmapy/blob/master/notebooks/ESIGMASur_tutorial.ipynb)
+ * JAXified `ESIGMASur` [tutorial notebook](https://github.com/gwnrtools/esigmapy/blob/surrogate/notebooks/ESIGMASur_tutorial.ipynb) **[UNDER CONSTRUCTION]**
 ***
 ## :blue_square: ESIGMAHM
 
@@ -103,6 +104,14 @@ The instructions to generate `ESIGMAHM` waveforms and the various functionalitie
 
 ### Trying out `ESIGMASur`
 The usage instructions and the various functionalities of `ESIGMASur` are detailed in [this tutorial notebook](https://github.com/gwnrtools/esigmapy/blob/master/notebooks/ESIGMASur_tutorial.ipynb).
+
+***
+
+## :red_square: JAXified ESIGMASur [UNDER DEVELOPMENT]
+Apart from the dependencies above, this would also require installing the [JAXified `TPI` library](https://github.com/Akash-Maurya-0899/TPI/tree/update) and the [JAXified `NRSur7dq4`](https://github.com/Akash-Maurya-0899/gwsurrogate/tree/NRSur7dq4JAX). 
+
+The usage instructions and the various functionalities of this version of `ESIGMASur` are detailed in [this tutorial notebook](https://github.com/gwnrtools/esigmapy/blob/surrogate/notebooks/ESIGMASur_tutorial.ipynb). Please note that it is still under development!
+
 
 ***
 ## 📖 Citation
